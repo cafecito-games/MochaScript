@@ -13,7 +13,16 @@ surface.
 
 ## Bootstrap verification
 
-Prerequisites are Git, Python 3, SCons, and the pinned Cafecito Godot binary on `PATH`.
+Prerequisites are Git, Python 3, a C++17 compiler toolchain, the pinned Cafecito Godot binary on
+`PATH`, and the exact SCons version and wheel hash recorded in `upstream.lock.json`. Install that
+SCons build into the user prefix with:
+
+```sh
+./scripts/install_scons.sh
+```
+
+The helper uses `pip --user`, `--require-hashes`, and the immutable wheel hash from the lock; it does
+not require root access.
 
 ```sh
 ./scripts/setup.sh

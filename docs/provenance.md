@@ -25,6 +25,9 @@ verifies commits, patcher configuration, relevant patch hashes, and every import
 `MOCHA_CUSTOM_GODOT_SOURCE` to use an existing checkout. Each pin gets a separate default checkout;
 the script refuses an explicitly selected checkout at another commit rather than rewriting it.
 Concurrent materialization of the same pin is serialized with a checkout-specific file lock.
+The architecture inventory is informational: files renamed or removed by a candidate revision are
+listed as absent instead of stopping materialization, so the component-specific upstream and
+candidate-to-Mocha reports can still be produced.
 
 The original component imports were:
 

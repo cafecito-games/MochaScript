@@ -6,6 +6,11 @@ Run the complete local suite with:
 ./scripts/verify.sh
 ```
 
+The build requires a C++17 compiler and exactly the SCons version pinned in
+`upstream.lock.json`. `./scripts/install_scons.sh` reproducibly installs its hash-verified wheel into
+the user's persistent Python prefix; `setup.sh` intentionally verifies rather than mutates the
+environment.
+
 It validates immutable pins, uses the cgroup CPU quota with a four-job ceiling, builds debug and
 release extension libraries with target-specific object caches, and load-probes the release library
 and its entry symbol. It then imports the fixture project and runs these isolated sentinels exactly

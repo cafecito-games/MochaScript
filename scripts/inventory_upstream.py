@@ -118,6 +118,18 @@ def line_count(path: Path) -> int:
         return sum(1 for _ in stream)
 
 
+def inventory_layers(module: Path) -> tuple[dict[str, int], dict[str, list[str]]]:
+    layer_lines: dict[str, int] = {}
+    missing_files: dict[str, list[str]] = {}
+    for name, files in LAYERS.items():
+        present = [relative for relative in files if (module / relative).is_file()]
+        missing = [relative for relative in files if relative not in present]
+        layer_lines[name] = sum(line_count(module / relative) for relative in present)
+        if missing:
+            missing_files[name] = missing
+    return layer_lines, missing_files
+
+
 def require_equal(label: str, actual: str, expected: str) -> None:
     if actual != expected:
         raise SystemExit(f"{label}: expected {expected}, actual {actual}")
@@ -172,10 +184,7 @@ def main() -> None:
             lock["installed_runtime"]["extension_api_sha256"],
         )
 
-    layer_lines = {
-        name: sum(line_count(module / relative) for relative in files)
-        for name, files in LAYERS.items()
-    }
+    layer_lines, missing_layer_files = inventory_layers(module)
     include_counts: Counter[str] = Counter()
     unique_headers: set[str] = set()
     for path in git_tracked_files(godot, lock["godot"]["gdscript_root"]):
@@ -191,6 +200,7 @@ def main() -> None:
         "custom_godot_commit": git_head(outer),
         "godot_commit": git_head(godot),
         "layer_lines": layer_lines,
+        "missing_layer_files": missing_layer_files,
         "direct_engine_include_counts": dict(include_counts.most_common()),
         "direct_engine_headers": sorted(unique_headers),
     }
@@ -201,7 +211,12 @@ def main() -> None:
     print("Pinned source verified.")
     print("\nLayer lines:")
     for name, count in layer_lines.items():
-        print(f"  {name:14} {count:7}")
+        missing = missing_layer_files.get(name, [])
+        suffix = f" ({len(missing)} expected file(s) absent)" if missing else ""
+        print(f"  {name:14} {count:7}{suffix}")
+    for name, files in missing_layer_files.items():
+        for relative in files:
+            print(f"    absent: {name}/{relative}")
     print("\nDirect engine include groups:")
     for prefix, count in include_counts.most_common():
         print(f"  {prefix:24} {count:4}")
