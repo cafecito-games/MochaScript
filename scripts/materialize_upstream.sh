@@ -32,7 +32,13 @@ else:
     print("\n".join(sorted({record["godot_commit"] for record in provenance["components"].values()})))
 PY
 )
-target=${MOCHA_CUSTOM_GODOT_SOURCE:-$cache_base/custom-godot-$custom_commit}
+explicit_source=false
+if [[ -n ${MOCHA_CUSTOM_GODOT_SOURCE:-} ]]; then
+    target=$MOCHA_CUSTOM_GODOT_SOURCE
+    explicit_source=true
+else
+    target=$cache_base/custom-godot-$custom_commit
+fi
 
 mkdir -p "$cache_base"
 target_parent=$(dirname "$target")
@@ -78,6 +84,11 @@ fi
 
 godot_root="$target/godot"
 if [[ ! -e "$godot_root/.git" ]]; then
+    if [[ "$explicit_source" == true ]]; then
+        echo "The explicitly supplied custom-Godot checkout has no initialized godot submodule." >&2
+        echo "Initialize it without MochaScript rewriting the checkout: git -C '$target' submodule update --init godot" >&2
+        exit 1
+    fi
     if [[ -e "$godot_root" && -n $(find "$godot_root" -mindepth 1 -maxdepth 1 -print -quit) ]]; then
         echo "Refusing to replace nonempty Godot path: $godot_root" >&2
         exit 1

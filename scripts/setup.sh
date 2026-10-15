@@ -14,6 +14,10 @@ if [[ ! -e "$repo_root/godot-cpp/.git" ]] || ! git -C "$repo_root/godot-cpp" rev
     echo "godot-cpp is not initialized; run: git submodule update --init --recursive" >&2
     exit 1
 fi
+if [[ -e "$repo_root/site_scons" ]]; then
+    echo "Repository-local site_scons overrides are not allowed by the pinned build" >&2
+    exit 1
+fi
 
 MOCHA_SCONS_COMMAND="$scons_command" python3 - <<'PY'
 import hashlib

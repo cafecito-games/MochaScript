@@ -28,7 +28,16 @@ python_abi=${pin[2]}
 tool_parent=${XDG_DATA_HOME:-${HOME}/.local/share}/mochascript
 venv_root="$tool_parent/scons-$version-${wheel_sha256:0:12}-$python_abi"
 mkdir -p "$tool_parent"
-if ! python3 -m venv "$venv_root"; then
+if [[ -L "$venv_root" ]]; then
+    echo "Refusing managed SCons virtualenv symlink: $venv_root" >&2
+    exit 1
+fi
+venv_arguments=()
+if [[ -d "$venv_root" ]] && { [[ ! -x "$venv_root/bin/python" ]] ||
+        ! "$venv_root/bin/python" -c 'import sys' >/dev/null 2>&1; }; then
+    venv_arguments+=(--clear)
+fi
+if ! python3 -m venv "${venv_arguments[@]}" "$venv_root"; then
     echo "Could not create the managed SCons virtualenv; install Python's venv support and retry." >&2
     exit 1
 fi

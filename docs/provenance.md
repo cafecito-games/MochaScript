@@ -25,7 +25,8 @@ and verifies commits, patcher configuration, and relevant patch hashes. Git's im
 fix the materialized file contents; component source hashes are checked by initial import and the
 upstream-review command. Set
 `MOCHA_CUSTOM_GODOT_SOURCE` to use an existing checkout. Each pin gets a separate default checkout;
-the script refuses an explicitly selected checkout at another commit rather than rewriting it.
+the script refuses an explicitly selected checkout at another commit or with an uninitialized
+Godot submodule rather than checking out, sparsifying, or otherwise rewriting it.
 Concurrent materialization of the same pin is serialized with a checkout-specific file lock.
 The architecture inventory is informational: files renamed or removed by a candidate revision are
 listed as absent instead of stopping materialization. Component review likewise records a missing
