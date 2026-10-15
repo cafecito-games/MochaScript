@@ -18,6 +18,29 @@ namespace mocha_script {
 
 namespace {
 
+Variant::Type carrier_for_type(const TypeRef &p_type) {
+	switch (p_type.kind) {
+		case TypeKind::BOOL: return Variant::BOOL;
+		case TypeKind::INT: return Variant::INT;
+		case TypeKind::FLOAT: return Variant::FLOAT;
+		case TypeKind::STRING: return Variant::STRING;
+		case TypeKind::ARRAY: return Variant::ARRAY;
+		case TypeKind::DICTIONARY: return Variant::DICTIONARY;
+		case TypeKind::OBJECT: return Variant::OBJECT;
+		default: return Variant::NIL;
+	}
+}
+
+void populate_value_info(GDExtensionPropertyInfo &r_info, const StringName &p_name, const TypeRef &p_type) {
+	r_info = {};
+	r_info.type = GDExtensionVariantType(carrier_for_type(p_type));
+	r_info.name = memnew(StringName(p_name));
+	r_info.class_name = memnew(StringName(p_type.kind == TypeKind::OBJECT ? p_type.name : StringName()));
+	r_info.hint = PROPERTY_HINT_NONE;
+	r_info.hint_string = memnew(String);
+	r_info.usage = p_type.kind == TypeKind::ANY ? PROPERTY_USAGE_NIL_IS_VARIANT : PROPERTY_USAGE_DEFAULT;
+}
+
 MochaScriptInstance *instance_of(GDExtensionScriptInstanceDataPtr p_instance) {
 	return reinterpret_cast<MochaScriptInstance *>(p_instance);
 }
@@ -49,12 +72,12 @@ const GDExtensionPropertyInfo *instance_get_property_list(GDExtensionScriptInsta
 	// has to outlive the call rather than live on this frame.
 	List<PropertyInfo> *properties = memnew(List<PropertyInfo>);
 	if (instance != nullptr && instance->script.is_valid()) {
-		for (int index = 0; index < instance->script->get_member_count(); index++) {
-			const Variant::Type carrier = instance->script->get_member_carrier(index);
-			properties->push_back(PropertyInfo(carrier, instance->script->get_member_name(index), PROPERTY_HINT_NONE, "",
-					carrier == Variant::NIL
-							? uint32_t(PROPERTY_USAGE_SCRIPT_VARIABLE | PROPERTY_USAGE_NIL_IS_VARIANT)
-							: uint32_t(PROPERTY_USAGE_SCRIPT_VARIABLE)));
+		const std::shared_ptr<CompiledModule> module = instance->script->retain_compiled_module();
+		if (module) for (const CompiledMember &member : module->members) {
+			const uint32_t usage = PROPERTY_USAGE_SCRIPT_VARIABLE |
+					(member.type.kind == TypeKind::ANY ? PROPERTY_USAGE_NIL_IS_VARIANT : 0);
+			properties->push_back(PropertyInfo(carrier_for_type(member.type), member.name, PROPERTY_HINT_NONE, "", usage,
+					member.type.kind == TypeKind::OBJECT ? member.type.name : StringName()));
 		}
 	}
 	return godot::internal::create_c_property_list(properties, r_count);
@@ -71,10 +94,13 @@ GDExtensionBool instance_get_class_category(GDExtensionScriptInstanceDataPtr, GD
 
 GDExtensionVariantType instance_get_property_type(GDExtensionScriptInstanceDataPtr p_instance, GDExtensionConstStringNamePtr p_name, GDExtensionBool *r_is_valid) {
 	MochaScriptInstance *instance = instance_of(p_instance);
-	Variant value;
-	if (instance != nullptr && instance->get_property(*reinterpret_cast<const StringName *>(p_name), value)) {
-		*r_is_valid = true;
-		return (GDExtensionVariantType)value.get_type();
+	if (instance != nullptr && instance->script.is_valid()) {
+		const int64_t index = instance->script->get_member_index(*reinterpret_cast<const StringName *>(p_name));
+		const TypeRef *type = instance->script->get_member_type(index);
+		if (type != nullptr) {
+			*r_is_valid = true;
+			return GDExtensionVariantType(carrier_for_type(*type));
+		}
 	}
 	*r_is_valid = false;
 	return GDEXTENSION_VARIANT_TYPE_NIL;
@@ -111,36 +137,25 @@ void instance_get_property_state(GDExtensionScriptInstanceDataPtr p_instance, GD
 
 const GDExtensionMethodInfo *instance_get_method_list(GDExtensionScriptInstanceDataPtr p_instance, uint32_t *r_count) {
 	MochaScriptInstance *instance = instance_of(p_instance);
-	Vector<StringName> names;
-	Vector<int> argument_counts;
-	if (instance != nullptr && instance->script.is_valid()) {
-		instance->script->collect_method_signatures(names, argument_counts);
-	}
-	*r_count = (uint32_t)names.size();
-	if (names.is_empty()) {
+	const std::shared_ptr<CompiledModule> module = instance != nullptr && instance->script.is_valid()
+			? instance->script->retain_compiled_module()
+			: nullptr;
+	*r_count = module ? uint32_t(module->functions.size()) : 0;
+	if (!module || module->functions.empty()) {
 		return nullptr;
 	}
-	GDExtensionMethodInfo *list = memnew_arr(GDExtensionMethodInfo, names.size());
-	for (int i = 0; i < names.size(); i++) {
+	GDExtensionMethodInfo *list = memnew_arr(GDExtensionMethodInfo, module->functions.size());
+	for (size_t i = 0; i < module->functions.size(); i++) {
+		const CompiledFunction &function = module->functions[i];
 		GDExtensionMethodInfo &entry = list[i];
 		entry = {};
-		entry.name = memnew(StringName(names[i]));
-		entry.return_value.type = GDEXTENSION_VARIANT_TYPE_NIL;
-		entry.return_value.name = memnew(StringName);
-		entry.return_value.class_name = memnew(StringName);
-		entry.return_value.hint_string = memnew(String);
-		entry.return_value.usage = PROPERTY_USAGE_NIL_IS_VARIANT;
+		entry.name = memnew(StringName(function.name));
+		populate_value_info(entry.return_value, StringName(), function.return_type);
 		entry.flags = METHOD_FLAG_NORMAL;
-		entry.argument_count = (uint32_t)argument_counts[i];
-		entry.arguments = argument_counts[i] > 0 ? memnew_arr(GDExtensionPropertyInfo, argument_counts[i]) : nullptr;
-		for (int argument = 0; argument < argument_counts[i]; argument++) {
-			GDExtensionPropertyInfo &info = entry.arguments[argument];
-			info = {};
-			info.type = GDEXTENSION_VARIANT_TYPE_NIL;
-			info.name = memnew(StringName(vformat("argument%d", argument)));
-			info.class_name = memnew(StringName);
-			info.hint_string = memnew(String);
-			info.usage = PROPERTY_USAGE_NIL_IS_VARIANT;
+		entry.argument_count = uint32_t(function.parameter_types.size());
+		entry.arguments = entry.argument_count > 0 ? memnew_arr(GDExtensionPropertyInfo, entry.argument_count) : nullptr;
+		for (uint32_t argument = 0; argument < entry.argument_count; argument++) {
+			populate_value_info(entry.arguments[argument], function.parameter_names[argument], function.parameter_types[argument]);
 		}
 	}
 	return list;

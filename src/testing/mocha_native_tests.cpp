@@ -189,6 +189,34 @@ godot::PackedStringArray MochaNativeTests::run() const {
 	{
 		Program invalid;
 		MochaParser invalid_parser;
+		invalid_parser.parse("func noop() -> void:\n\tpass\nfunc bad() -> Variant:\n\treturn noop()\n", "res://native_void_value.mocha", invalid);
+		MochaAnalyzer analyzer;
+		if (analyzer.analyze(invalid, "res://native_void_value.mocha") != godot::ERR_COMPILATION_FAILED) {
+			failures.push_back("analyzer: void expression was accepted as a value");
+		} else {
+			bool found = false;
+			for (const Diagnostic &diagnostic : analyzer.get_diagnostics()) found |= diagnostic.code == "M2008";
+			if (!found) failures.push_back("analyzer: void expression did not produce M2008");
+		}
+	}
+
+	{
+		Program invalid;
+		MochaParser invalid_parser;
+		invalid_parser.parse("func _notification(what: String) -> int:\n\treturn 0\n", "res://native_bad_notification.mocha", invalid);
+		MochaAnalyzer analyzer;
+		if (analyzer.analyze(invalid, "res://native_bad_notification.mocha") != godot::ERR_COMPILATION_FAILED) {
+			failures.push_back("analyzer: invalid _notification signature was accepted");
+		} else {
+			bool found = false;
+			for (const Diagnostic &diagnostic : analyzer.get_diagnostics()) found |= diagnostic.code == "M2027";
+			if (!found) failures.push_back("analyzer: invalid _notification signature did not produce M2027");
+		}
+	}
+
+	{
+		Program invalid;
+		MochaParser invalid_parser;
 		invalid_parser.parse("var value: DefinitelyNotAClass\n", "res://native_unknown_type.mocha", invalid);
 		MochaAnalyzer analyzer;
 		if (analyzer.analyze(invalid, "res://native_unknown_type.mocha") != godot::ERR_COMPILATION_FAILED ||

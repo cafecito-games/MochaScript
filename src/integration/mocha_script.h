@@ -42,8 +42,6 @@ public:
 	int64_t get_member_count() const;
 	godot::StringName get_member_name(int64_t p_index) const;
 	const TypeRef *get_member_type(int64_t p_index) const;
-	godot::Variant::Type get_member_carrier(int64_t p_index) const;
-	void collect_method_signatures(godot::Vector<godot::StringName> &r_names, godot::Vector<int> &r_argument_counts) const;
 	void notify_instance_freed(MochaScriptInstance *p_instance);
 
 	bool _editor_can_reload_from_file() override;

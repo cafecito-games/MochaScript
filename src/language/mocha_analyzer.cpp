@@ -80,7 +80,7 @@ void MochaAnalyzer::validate_type(const TypeRef &p_type, const SourceSpan &p_spa
 	}
 }
 
-TypeRef MochaAnalyzer::analyze_expression(ExprPtr &p_expression, Context &r_context) {
+TypeRef MochaAnalyzer::analyze_expression(ExprPtr &p_expression, Context &r_context, bool p_value_required) {
 	if (!p_expression) return TypeRef::any();
 	TypeRef result = TypeRef::any();
 	switch (p_expression->kind) {
@@ -193,6 +193,9 @@ TypeRef MochaAnalyzer::analyze_expression(ExprPtr &p_expression, Context &r_cont
 		} break;
 	}
 	p_expression->inferred_type = result;
+	if (p_value_required && result.kind == TypeKind::VOID) {
+		report(p_expression->span, "M2008", "A void expression cannot be used as a value.");
+	}
 	return result;
 }
 
@@ -215,7 +218,7 @@ void MochaAnalyzer::analyze_statement(StmtPtr &p_statement, Context &r_context) 
 			r_context.locals.insert(p_statement->name, type);
 		} break;
 		case StatementKind::EXPRESSION:
-			analyze_expression(p_statement->expression, r_context);
+			analyze_expression(p_statement->expression, r_context, false);
 			break;
 		case StatementKind::ASSIGNMENT: {
 			TypeRef target = TypeRef::any();
@@ -301,6 +304,12 @@ Error MochaAnalyzer::analyze(Program &p_program, const String &p_path) {
 		if (function.name == StringName("_notification") &&
 				(function.parameters.size() < 1 || function.parameters.size() > 2)) {
 			report(function.span, "M2027", "_notification must declare one or two parameters.");
+		} else if (function.name == StringName("_notification")) {
+			const bool first_valid = function.parameters[0].type.kind == TypeKind::INT || function.parameters[0].type.kind == TypeKind::ANY;
+			const bool second_valid = function.parameters.size() == 1 || function.parameters[1].type.kind == TypeKind::BOOL || function.parameters[1].type.kind == TypeKind::ANY;
+			if (!first_valid || !second_valid || function.return_type.kind != TypeKind::VOID) {
+				report(function.span, "M2027", "_notification requires (int[, bool]) parameters and a void return type.");
+			}
 		}
 		for (const Parameter &parameter : function.parameters) {
 			validate_type(parameter.type, parameter.span, vformat("for parameter '%s'", String(parameter.name)));

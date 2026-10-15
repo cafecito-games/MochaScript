@@ -73,17 +73,6 @@ const TypeRef *MochaScript::get_member_type(int64_t p_index) const {
 	return compiled_module && p_index >= 0 && p_index < int64_t(compiled_module->members.size())
 			? &compiled_module->members[size_t(p_index)].type : nullptr;
 }
-godot::Variant::Type MochaScript::get_member_carrier(int64_t p_index) const {
-	const TypeRef *type = get_member_type(p_index);
-	return type == nullptr ? godot::Variant::NIL : carrier_for_type(*type);
-}
-void MochaScript::collect_method_signatures(godot::Vector<godot::StringName> &r_names, godot::Vector<int> &r_argument_counts) const {
-	if (!compiled_module) return;
-	for (const CompiledFunction &function : compiled_module->functions) {
-		r_names.push_back(function.name);
-		r_argument_counts.push_back(int(function.parameter_types.size()));
-	}
-}
 void MochaScript::notify_instance_freed(MochaScriptInstance *p_instance) { instances.erase(p_instance); }
 bool MochaScript::_editor_can_reload_from_file() { return true; }
 void MochaScript::_placeholder_erased(void *) {}
@@ -104,13 +93,15 @@ void *MochaScript::_instance_create(godot::Object *p_for_object) const {
 	auto *instance = memnew(MochaScriptInstance);
 	instance->owner = p_for_object;
 	instance->script = godot::Ref<MochaScript>(const_cast<MochaScript *>(this));
+	const_cast<MochaScript *>(this)->instances.insert(instance);
 	RuntimeFailure failure;
 	if (MochaVM::initialize(*module, p_for_object, instance->members, failure) != godot::OK) {
 		godot::UtilityFunctions::push_error(godot::vformat("%s:%d:%d: %s: %s", get_path(), failure.span.line, failure.span.column, failure.code, failure.message));
+		MochaVM::publish_nested_failure(failure);
+		const_cast<MochaScript *>(this)->instances.erase(instance);
 		memdelete(instance);
 		return nullptr;
 	}
-	const_cast<MochaScript *>(this)->instances.insert(instance);
 	void *handle = godot::gdextension_interface::script_instance_create3(MochaScriptInstance::get_vtable(), instance);
 	if (handle == nullptr) {
 		const_cast<MochaScript *>(this)->instances.erase(instance);
@@ -127,6 +118,7 @@ void *MochaScript::_placeholder_instance_create(godot::Object *p_for_object) con
 bool MochaScript::_has_source_code() const { return true; }
 godot::String MochaScript::_get_source_code() const { return source_code; }
 void MochaScript::_set_source_code(const godot::String &p_code) {
+	if (p_code == source_code) return;
 	if (!instances.is_empty() && p_code != source_code) {
 		diagnostics.clear();
 		godot::Dictionary diagnostic;
@@ -141,8 +133,11 @@ void MochaScript::_set_source_code(const godot::String &p_code) {
 		return;
 	}
 	source_code = p_code;
+	valid = false;
 	token_count = 0;
 	diagnostics.clear();
+	program.reset();
+	compiled_module.reset();
 }
 
 godot::Error MochaScript::_reload(bool) {
@@ -262,10 +257,10 @@ godot::TypedArray<godot::Dictionary> MochaScript::_get_script_property_list() co
 	godot::TypedArray<godot::Dictionary> properties;
 	if (!compiled_module) return properties;
 	for (size_t index = 0; index < compiled_module->members.size(); ++index) {
-		godot::Dictionary property;
-		property["name"] = compiled_module->members[index].name;
-		property["type"] = int64_t(get_member_carrier(int64_t(index)));
-		property["usage"] = int64_t(godot::PROPERTY_USAGE_SCRIPT_VARIABLE);
+		const CompiledMember &member = compiled_module->members[index];
+		godot::Dictionary property = method_value_info(member.name, member.type);
+		property["usage"] = int64_t(godot::PROPERTY_USAGE_SCRIPT_VARIABLE |
+				(member.type.kind == TypeKind::ANY ? godot::PROPERTY_USAGE_NIL_IS_VARIANT : 0));
 		properties.push_back(property);
 	}
 	return properties;

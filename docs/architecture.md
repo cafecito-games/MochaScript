@@ -38,7 +38,9 @@ then publishes one complete module. No executable module is published after an e
 with `ERR_ALREADY_IN_USE` while an instance is alive; this prevents bytecode and member-layout
 replacement beneath active frames. Each VM call also retains its module for the complete frame.
 Source replacement is likewise refused with diagnostic `M0003` while an instance is alive, so the
-published source and executable module cannot disagree.
+published source and executable module cannot disagree. With no live instance, changing source
+immediately invalidates and discards the old AST and module; execution becomes available again only
+after the replacement source completes a successful reload.
 
 Each attached object receives a `MochaScriptInstance` containing its own member vector and a strong
 reference to the script. Godot reaches it through `GDExtensionScriptInstanceInfo3`; startup refuses

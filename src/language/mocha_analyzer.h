@@ -24,7 +24,7 @@ class MochaAnalyzer {
 
 	void report(const SourceSpan &p_span, const String &p_code, const String &p_message);
 	const FunctionDecl *find_function(const StringName &p_name) const;
-	TypeRef analyze_expression(ExprPtr &p_expression, Context &r_context);
+	TypeRef analyze_expression(ExprPtr &p_expression, Context &r_context, bool p_value_required = true);
 	void analyze_statement(StmtPtr &p_statement, Context &r_context);
 	void analyze_block(std::vector<StmtPtr> &p_block, Context &r_context);
 	bool assignable(const TypeRef &p_target, const TypeRef &p_value) const;

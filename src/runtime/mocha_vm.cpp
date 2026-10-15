@@ -18,8 +18,7 @@ namespace {
 thread_local int vm_entry_count = 0;
 thread_local int vm_frame_depth = 0;
 thread_local int64_t vm_operations_remaining = 0;
-thread_local bool vm_nested_failure_pending = false;
-thread_local RuntimeFailure vm_nested_failure;
+thread_local std::vector<RuntimeFailure *> vm_failure_captures;
 
 struct VMEntry {
 	bool root = false;
@@ -28,7 +27,6 @@ struct VMEntry {
 		if (root) {
 			vm_frame_depth = 0;
 			vm_operations_remaining = 1000000;
-			vm_nested_failure_pending = false;
 		}
 	}
 	~VMEntry() { vm_entry_count--; }
@@ -58,11 +56,15 @@ Variant runtime_default(const TypeRef &p_type) {
 	}
 }
 
-bool consume_nested_failure(RuntimeFailure &r_failure) {
-	if (!vm_nested_failure_pending) return false;
-	r_failure = vm_nested_failure;
-	vm_nested_failure_pending = false;
-	vm_nested_failure = {};
+struct NestedFailureCapture {
+	RuntimeFailure failure;
+	NestedFailureCapture() { vm_failure_captures.push_back(&failure); }
+	~NestedFailureCapture() { vm_failure_captures.pop_back(); }
+};
+
+bool take_nested_failure(const RuntimeFailure &p_captured, RuntimeFailure &r_failure) {
+	if (p_captured.message.is_empty()) return false;
+	r_failure = p_captured;
 	return true;
 }
 
@@ -163,6 +165,9 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 		RuntimeFailure &r_failure) {
 	r_call_error.error = GDEXTENSION_CALL_OK;
 	const uint64_t owner_id = p_owner != nullptr ? p_owner->get_instance_id() : 0;
+	auto owner_is_alive = [&]() {
+		return owner_id == 0 || ObjectDB::get_instance(owner_id) == p_owner;
+	};
 	VMFrame frame;
 	if (!frame.valid) {
 		r_call_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
@@ -236,6 +241,10 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				stack.push_back(instruction.operand);
 				break;
 			case OpCode::PUSH_SELF:
+				if (!owner_is_alive()) {
+					fail(r_failure, instruction.span, "The MochaScript owner was freed during execution.");
+					return {};
+				}
 				stack.push_back(Variant(p_owner));
 				break;
 			case OpCode::LOAD_LOCAL:
@@ -304,7 +313,15 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				Variant container;
 				if (!pop(instruction, key) || !pop(instruction, container)) return {};
 				bool valid = false;
-				Variant value = container.get(key, &valid);
+				RuntimeFailure nested_failure;
+				Variant value;
+				{
+					NestedFailureCapture capture;
+					value = container.get(key, &valid);
+					nested_failure = capture.failure;
+				}
+				if (take_nested_failure(nested_failure, r_failure)) return {};
+				if (!owner_is_alive()) { fail(r_failure, instruction.span, "The MochaScript owner was freed during an index operation."); return {}; }
 				if (!valid) { fail(r_failure, instruction.span, "Invalid index operation in MochaScript."); return {}; }
 				stack.push_back(value);
 			} break;
@@ -312,7 +329,15 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				Variant receiver;
 				if (!pop(instruction, receiver)) return {};
 				bool valid = false;
-				Variant value = receiver.get_named(instruction.name, valid);
+				RuntimeFailure nested_failure;
+				Variant value;
+				{
+					NestedFailureCapture capture;
+					value = receiver.get_named(instruction.name, valid);
+					nested_failure = capture.failure;
+				}
+				if (take_nested_failure(nested_failure, r_failure)) return {};
+				if (!owner_is_alive()) { fail(r_failure, instruction.span, "The MochaScript owner was freed during a member read."); return {}; }
 				if (!valid) { fail(r_failure, instruction.span, vformat("Value has no member '%s'.", String(instruction.name))); return {}; }
 				stack.push_back(value);
 			} break;
@@ -355,11 +380,13 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				if (instruction.opcode == OpCode::CALL_METHOD) {
 					if (!pop(instruction, receiver)) return {};
 				} else {
+					if (!owner_is_alive()) { fail(r_failure, instruction.span, "The MochaScript owner was freed before a call."); return {}; }
 					receiver = Variant(p_owner);
 				}
 				Variant result;
 				GDExtensionCallError nested_error;
 				nested_error.error = GDEXTENSION_CALL_OK;
+				RuntimeFailure nested_failure;
 				if (instruction.opcode == OpCode::CALL_SELF) {
 					if (instruction.name == StringName("mocha_language_version")) {
 						if (!pointers.empty()) {
@@ -371,12 +398,16 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 					} else if (const CompiledFunction *callee = p_module.find_function(instruction.name)) {
 						result = execute(p_module, *callee, p_owner, r_members, pointers.data(), int(pointers.size()), nested_error, r_failure);
 					} else {
+						NestedFailureCapture capture;
 						receiver.callp(instruction.name, pointers.data(), int(pointers.size()), result, nested_error);
+						nested_failure = capture.failure;
 					}
 				} else {
+					NestedFailureCapture capture;
 					receiver.callp(instruction.name, pointers.data(), int(pointers.size()), result, nested_error);
+					nested_failure = capture.failure;
 				}
-				if (consume_nested_failure(r_failure)) {
+				if (take_nested_failure(nested_failure, r_failure)) {
 					r_call_error.error = GDEXTENSION_CALL_ERROR_INVALID_ARGUMENT;
 					return {};
 				}
@@ -449,9 +480,8 @@ Variant MochaVM::call(const CompiledModule &p_module, const CompiledFunction &p_
 }
 
 void MochaVM::publish_nested_failure(const RuntimeFailure &p_failure) {
-	if (vm_entry_count <= 0 || p_failure.message.is_empty()) return;
-	vm_nested_failure = p_failure;
-	vm_nested_failure_pending = true;
+	if (p_failure.message.is_empty() || vm_failure_captures.empty()) return;
+	*vm_failure_captures.back() = p_failure;
 }
 
 } // namespace mocha_script

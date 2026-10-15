@@ -32,6 +32,24 @@ func _initialize() -> void:
 		elif not host.has_method("compute"):
 			failures.append("compiled compute method is not visible through Godot")
 		else:
+			var instance_compute_metadata: Dictionary = {}
+			for method in host.get_method_list():
+				if method.get("name") == &"compute":
+					instance_compute_metadata = method
+					break
+			if instance_compute_metadata.is_empty() or instance_compute_metadata.get("args", []).size() != 1:
+				failures.append("instance method metadata omitted compute's parameter")
+			elif instance_compute_metadata.get("args", [])[0].get("name") != &"input" or instance_compute_metadata.get("args", [])[0].get("type") != TYPE_INT:
+				failures.append("instance method metadata lost compute's typed parameter: %s" % instance_compute_metadata)
+			elif instance_compute_metadata.get("return", {}).get("type") != TYPE_INT:
+				failures.append("instance method metadata omitted compute's int return")
+			var total_metadata: Dictionary = {}
+			for property in host.get_property_list():
+				if property.get("name") == &"total":
+					total_metadata = property
+					break
+			if total_metadata.is_empty() or total_metadata.get("type") != TYPE_INT:
+				failures.append("instance property metadata omitted total's int type")
 			var result: Variant = host.call("compute", 1)
 			if result != 42:
 				failures.append("compute returned %s instead of 42" % result)
@@ -43,6 +61,17 @@ func _initialize() -> void:
 			if detach_result != 1 or host.get_script() != null:
 				failures.append("script instance did not survive and complete a self-detach call safely")
 		host.free()
+
+	var transient := MochaScript.new()
+	transient.set_source_code("extends RefCounted\nfunc answer() -> int:\n\treturn 42\n")
+	if transient.reload() != OK or not transient.can_instantiate():
+		failures.append("transient source did not compile")
+	else:
+		transient.set_source_code("extends RefCounted\nfunc answer() -> int:\n\treturn 43\n")
+		if transient.is_compilation_valid() or transient.can_instantiate():
+			failures.append("changed source retained a stale compiled module")
+		elif transient.reload() != OK or not transient.can_instantiate():
+			failures.append("changed transient source did not recompile")
 
 	if failures.is_empty():
 		print("MOCHA_EXECUTION_OK")
