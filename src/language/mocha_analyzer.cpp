@@ -76,6 +76,79 @@ bool MochaAnalyzer::assignable(const TypeRef &p_target, const TypeRef &p_value) 
 	return p_target.kind == p_value.kind;
 }
 
+TypeRef MochaAnalyzer::analyze_binary_types(MochaTokenizer::Token::Type p_operation,
+		const TypeRef &p_left, const TypeRef &p_right, const SourceSpan &p_span, bool *r_valid) {
+	using Token = MochaTokenizer::Token;
+	if (r_valid != nullptr) *r_valid = true;
+	const bool dynamic = p_left.kind == TypeKind::ANY || p_right.kind == TypeKind::ANY;
+	auto invalid = [&]() {
+		if (r_valid != nullptr) {
+			*r_valid = false;
+		} else {
+			report(p_span, "M2003", vformat("Operator '%s' does not accept %s and %s.",
+					MochaTokenizer::get_token_name(p_operation), type_name(p_left), type_name(p_right)));
+		}
+		return TypeRef::any();
+	};
+	switch (p_operation) {
+		case Token::EQUAL_EQUAL:
+		case Token::BANG_EQUAL:
+		case Token::TK_IN:
+		case Token::IS:
+			return TypeRef::make(TypeKind::BOOL, "bool");
+		case Token::LESS:
+		case Token::LESS_EQUAL:
+		case Token::GREATER:
+		case Token::GREATER_EQUAL:
+			if (dynamic || (numeric(p_left) && numeric(p_right)) ||
+					(p_left.kind == TypeKind::STRING && p_right.kind == TypeKind::STRING)) {
+				return TypeRef::make(TypeKind::BOOL, "bool");
+			}
+			return invalid();
+		case Token::AND:
+		case Token::OR:
+		case Token::AMPERSAND_AMPERSAND:
+		case Token::PIPE_PIPE:
+			if (dynamic || (p_left.kind == TypeKind::BOOL && p_right.kind == TypeKind::BOOL)) {
+				return TypeRef::make(TypeKind::BOOL, "bool");
+			}
+			return invalid();
+		case Token::PLUS:
+			if (p_left.kind == TypeKind::STRING && p_right.kind == TypeKind::STRING) {
+				return TypeRef::make(TypeKind::STRING, "String");
+			}
+			[[fallthrough]];
+		case Token::MINUS:
+		case Token::STAR:
+			if (dynamic) return TypeRef::any();
+			if (!numeric(p_left) || !numeric(p_right)) return invalid();
+			return p_left.kind == TypeKind::FLOAT || p_right.kind == TypeKind::FLOAT
+					? TypeRef::make(TypeKind::FLOAT, "float")
+					: TypeRef::make(TypeKind::INT, "int");
+		case Token::STAR_STAR:
+			if (dynamic) return TypeRef::any();
+			if (!numeric(p_left) || !numeric(p_right)) return invalid();
+			return TypeRef::make(TypeKind::FLOAT, "float");
+		case Token::SLASH:
+			if (dynamic) return TypeRef::any();
+			if (!numeric(p_left) || !numeric(p_right)) return invalid();
+			return p_left.kind == TypeKind::FLOAT || p_right.kind == TypeKind::FLOAT
+					? TypeRef::make(TypeKind::FLOAT, "float")
+					: TypeRef::make(TypeKind::INT, "int");
+		case Token::PERCENT:
+		case Token::LESS_LESS:
+		case Token::GREATER_GREATER:
+		case Token::AMPERSAND:
+		case Token::PIPE:
+		case Token::CARET:
+			if (dynamic) return TypeRef::any();
+			if (p_left.kind != TypeKind::INT || p_right.kind != TypeKind::INT) return invalid();
+			return TypeRef::make(TypeKind::INT, "int");
+		default:
+			return invalid();
+	}
+}
+
 void MochaAnalyzer::validate_type(const TypeRef &p_type, const SourceSpan &p_span, const String &p_context, bool p_allow_void) {
 	if (p_type.kind == TypeKind::VOID && !p_allow_void) {
 		report(p_span, "M2026", vformat("Type 'void' is only valid as a function return type, not %s.", p_context));
@@ -126,6 +199,11 @@ TypeRef MochaAnalyzer::analyze_expression(ExprPtr &p_expression, Context &r_cont
 			const TypeRef operand = analyze_expression(p_expression->right, r_context);
 			if (p_expression->operation == MochaTokenizer::Token::NOT || p_expression->operation == MochaTokenizer::Token::BANG) {
 				result = TypeRef::make(TypeKind::BOOL, "bool");
+			} else if (p_expression->operation == MochaTokenizer::Token::TILDE) {
+				if (operand.kind != TypeKind::INT && operand.kind != TypeKind::ANY) {
+					report(p_expression->span, "M2002", "Bitwise negation requires int.");
+				}
+				result = operand.kind == TypeKind::ANY ? TypeRef::any() : TypeRef::make(TypeKind::INT, "int");
 			} else {
 				if (!numeric(operand)) report(p_expression->span, "M2002", "A numeric unary operator requires int or float.");
 				result = operand;
@@ -134,40 +212,7 @@ TypeRef MochaAnalyzer::analyze_expression(ExprPtr &p_expression, Context &r_cont
 		case ExprKind::BINARY: {
 			const TypeRef left = analyze_expression(p_expression->left, r_context);
 			const TypeRef right = analyze_expression(p_expression->right, r_context);
-			switch (p_expression->operation) {
-				case MochaTokenizer::Token::EQUAL_EQUAL:
-				case MochaTokenizer::Token::BANG_EQUAL:
-				case MochaTokenizer::Token::LESS:
-				case MochaTokenizer::Token::LESS_EQUAL:
-				case MochaTokenizer::Token::GREATER:
-				case MochaTokenizer::Token::GREATER_EQUAL:
-				case MochaTokenizer::Token::AND:
-				case MochaTokenizer::Token::OR:
-				case MochaTokenizer::Token::AMPERSAND_AMPERSAND:
-				case MochaTokenizer::Token::PIPE_PIPE:
-				case MochaTokenizer::Token::TK_IN:
-				case MochaTokenizer::Token::IS:
-					result = TypeRef::make(TypeKind::BOOL, "bool");
-					break;
-				case MochaTokenizer::Token::PLUS:
-					if (left.kind == TypeKind::STRING && right.kind == TypeKind::STRING) {
-						result = TypeRef::make(TypeKind::STRING, "String");
-						break;
-					}
-					[[fallthrough]];
-				default:
-					if (left.kind == TypeKind::ANY || right.kind == TypeKind::ANY) {
-						result = TypeRef::any();
-						break;
-					}
-					if (!numeric(left) || !numeric(right)) {
-						report(p_expression->span, "M2003", "This binary operator requires compatible numeric operands.");
-					}
-					result = left.kind == TypeKind::FLOAT || right.kind == TypeKind::FLOAT
-							? TypeRef::make(TypeKind::FLOAT, "float")
-							: TypeRef::make(TypeKind::INT, "int");
-					break;
-			}
+			result = analyze_binary_types(p_expression->operation, left, right, p_expression->span);
 		} break;
 		case ExprKind::MEMBER:
 			analyze_expression(p_expression->left, r_context);
@@ -248,8 +293,22 @@ void MochaAnalyzer::analyze_statement(StmtPtr &p_statement, Context &r_context) 
 				report(p_statement->span, "M2090", "This bootstrap currently supports assignment only to local or member names.");
 			}
 			const TypeRef value = analyze_expression(p_statement->expression, r_context);
-			if (!assignable(target, value)) {
-				report(p_statement->span, "M2013", vformat("Cannot assign %s to %s.", type_name(value), type_name(target)));
+			TypeRef stored = value;
+			bool operation_valid = true;
+			if (p_statement->operation != MochaTokenizer::Token::EQUAL) {
+				MochaTokenizer::Token::Type binary_operation = MochaTokenizer::Token::EMPTY;
+				switch (p_statement->operation) {
+					case MochaTokenizer::Token::PLUS_EQUAL: binary_operation = MochaTokenizer::Token::PLUS; break;
+					case MochaTokenizer::Token::MINUS_EQUAL: binary_operation = MochaTokenizer::Token::MINUS; break;
+					case MochaTokenizer::Token::STAR_EQUAL: binary_operation = MochaTokenizer::Token::STAR; break;
+					case MochaTokenizer::Token::SLASH_EQUAL: binary_operation = MochaTokenizer::Token::SLASH; break;
+					case MochaTokenizer::Token::PERCENT_EQUAL: binary_operation = MochaTokenizer::Token::PERCENT; break;
+					default: break;
+				}
+				stored = analyze_binary_types(binary_operation, target, value, p_statement->span, &operation_valid);
+			}
+			if (!operation_valid || !assignable(target, stored)) {
+				report(p_statement->span, "M2013", vformat("Cannot assign %s to %s.", type_name(stored), type_name(target)));
 			}
 		} break;
 		case StatementKind::RETURN: {

@@ -20,6 +20,7 @@ only when an entry or a MochaScript specification test says it is.
 | file extension | intentional divergence | Source files use `.mocha`. | recognition test |
 | language identity | intentional divergence | Godot reports `MochaScript`, never `GDScript`. | recognition test |
 | tokenizer and grammar | inherited subset | The pinned tokenizer plus the specified executable grammar are Mocha-owned. | native tests and pinned corpus |
+| exponentiation precedence | inherited | `**` is left-associative; signed literals and explicit unary operators retain the pinned tokenizer/parser behavior. | native precedence tests |
 | static analysis | inherited subset | Typed declarations and operations in the bootstrap specification are checked. | native and negative fixtures |
 | compiler and runtime | intentional ownership | Mocha bytecode and VM execute scripts; GDScript is never called. | vertical slice |
 | diagnostics | intentional divergence | Stable `M0xxx`–`M4xxx` records include source locations. | negative fixtures |

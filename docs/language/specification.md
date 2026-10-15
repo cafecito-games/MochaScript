@@ -38,8 +38,13 @@ remains `Variant` instead of creating an unusable null-only type. `and`/`or` and
 short-circuit. Word-form `not` binds below comparison/containment and above `and`; symbolic `!`
 remains a high-precedence unary operator.
 
-The bootstrap frontend rejects recursively nested expressions or expression trees deeper than 256
-nodes with stable parser/analyzer diagnostics instead of risking the native stack.
+Exponentiation retains the pinned bootstrap baseline: `**` is left-associative. Signed numeric
+literals remain tokenizer atoms (`-2 ** 2` is `4`), while an explicit spaced unary operator binds
+below exponentiation (`- 2 ** 2` is `-4`).
+
+The bootstrap frontend rejects recursively nested expressions, constructed expression trees, and
+statement nesting deeper than 256 nodes with stable parser/analyzer diagnostics instead of risking
+the native stack.
 
 ## Unsupported now
 

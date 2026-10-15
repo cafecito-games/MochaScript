@@ -76,6 +76,7 @@ using ExprPtr = std::shared_ptr<Expression>;
 struct Expression {
 	ExprKind kind = ExprKind::LITERAL;
 	SourceSpan span;
+	int tree_depth = 1;
 	Variant literal;
 	StringName name;
 	MochaTokenizer::Token::Type operation = MochaTokenizer::Token::EMPTY;

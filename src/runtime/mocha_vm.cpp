@@ -8,6 +8,7 @@
 #include "runtime/mocha_vm.h"
 
 #include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/core/object_id.hpp>
 #include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
 
@@ -111,7 +112,8 @@ bool MochaVM::convert_value(const Variant &p_value, const TypeRef &p_type, Varia
 			break;
 		case TypeKind::OBJECT: {
 			if (p_value.get_type() != Variant::OBJECT) return false;
-			Object *object = p_value;
+			Object *object = p_value.get_validated_object();
+			if (object == nullptr && ObjectID(p_value).is_valid()) return false;
 			if (object != nullptr && !p_type.name.is_empty() && p_type.name != StringName("Object") &&
 					!ClassDB::is_parent_class(object->get_class(), p_type.name)) return false;
 		} break;
@@ -163,6 +165,7 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 		Object *p_owner, Vector<Variant> &r_members, const Variant **p_arguments,
 		int p_argument_count, GDExtensionCallError &r_call_error,
 		RuntimeFailure &r_failure) {
+	r_call_error = {};
 	r_call_error.error = GDEXTENSION_CALL_OK;
 	const uint64_t owner_id = p_owner != nullptr ? p_owner->get_instance_id() : 0;
 	auto owner_is_alive = [&]() {
@@ -384,7 +387,7 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 					receiver = Variant(p_owner);
 				}
 				Variant result;
-				GDExtensionCallError nested_error;
+				GDExtensionCallError nested_error = {};
 				nested_error.error = GDEXTENSION_CALL_OK;
 				RuntimeFailure nested_failure;
 				if (instruction.opcode == OpCode::CALL_SELF) {
@@ -472,9 +475,12 @@ Variant MochaVM::call(const CompiledModule &p_module, const CompiledFunction &p_
 	r_failure = {};
 	VMEntry entry;
 	Variant result = execute(p_module, p_function, p_owner, r_members, p_arguments, p_argument_count, r_call_error, r_failure);
-	if (!r_failure.message.is_empty() && r_call_error.error == GDEXTENSION_CALL_OK) {
-		r_call_error.error = GDEXTENSION_CALL_ERROR_INVALID_ARGUMENT;
-		r_call_error.argument = -1;
+	if (!r_failure.message.is_empty()) {
+		// Internal script failures are already reported with their Mocha location.
+		// Returning an argument error here is unsafe when there is no corresponding
+		// external argument for Godot's formatter to inspect.
+		r_call_error = {};
+		r_call_error.error = GDEXTENSION_CALL_OK;
 	}
 	return result;
 }

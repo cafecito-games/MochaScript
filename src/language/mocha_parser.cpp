@@ -15,10 +15,16 @@ namespace {
 
 using Token = MochaTokenizer::Token;
 constexpr int MAX_EXPRESSION_DEPTH = 256;
+constexpr int MAX_STATEMENT_DEPTH = 256;
 
 struct ExpressionDepthScope {
 	int &depth;
 	~ExpressionDepthScope() { depth--; }
+};
+
+struct StatementDepthScope {
+	int &depth;
+	~StatementDepthScope() { depth--; }
 };
 
 SourceSpan merge_span(const SourceSpan &p_first, const SourceSpan &p_last) {
@@ -204,6 +210,13 @@ bool MochaParser::parse_function(Program &r_program) {
 
 std::vector<StmtPtr> MochaParser::parse_suite() {
 	std::vector<StmtPtr> body;
+	if (++statement_depth > MAX_STATEMENT_DEPTH) {
+		statement_depth--;
+		error_at(peek(), "M1010", vformat("Statement nesting exceeds the limit of %d.", MAX_STATEMENT_DEPTH));
+		synchronize_line();
+		return body;
+	}
+	StatementDepthScope depth_scope{ statement_depth };
 	consume(Token::NEWLINE, "Expected a newline before the indented block.");
 	consume(Token::INDENT, "Expected an indented block.");
 	while (!at_end() && !check(Token::DEDENT)) {
@@ -242,6 +255,13 @@ StmtPtr MochaParser::parse_variable_statement() {
 }
 
 StmtPtr MochaParser::parse_if_statement() {
+	if (++statement_depth > MAX_STATEMENT_DEPTH) {
+		statement_depth--;
+		error_at(peek(), "M1010", vformat("Conditional nesting exceeds the limit of %d.", MAX_STATEMENT_DEPTH));
+		synchronize_line();
+		return {};
+	}
+	StatementDepthScope depth_scope{ statement_depth };
 	const Token start = previous();
 	auto result = statement(StatementKind::IF, span_from_token(start));
 	result->expression = parse_expression();
@@ -356,10 +376,17 @@ ExprPtr MochaParser::parse_expression(int p_min_precedence) {
 		const int precedence = binary_precedence(peek().type);
 		if (precedence < p_min_precedence) break;
 		const Token operation = advance();
-		const int next_precedence = precedence + (operation.type == Token::STAR_STAR ? 0 : 1);
+		const int next_precedence = precedence + 1;
 		ExprPtr right = parse_expression(next_precedence);
 		if (!right) return left;
+		const int combined_depth = MAX(left->tree_depth, right->tree_depth) + 1;
+		if (combined_depth > MAX_EXPRESSION_DEPTH) {
+			error_at(operation, "M1009", vformat("Expression tree exceeds the limit of %d.", MAX_EXPRESSION_DEPTH));
+			synchronize_line();
+			return left;
+		}
 		auto combined = expression(ExprKind::BINARY, merge_span(left->span, right->span));
+		combined->tree_depth = combined_depth;
 		combined->left = left;
 		combined->right = right;
 		combined->operation = operation.type;
@@ -383,15 +410,22 @@ ExprPtr MochaParser::parse_unary() {
 		ExprPtr operand = parse_expression(3);
 		if (!operand) return {};
 		auto result = expression(ExprKind::UNARY, merge_span(span_from_token(operation), operand->span));
+		result->tree_depth = operand->tree_depth + 1;
 		result->operation = operation.type;
 		result->right = operand;
 		return result;
 	}
 	if (match(Token::BANG) || match(Token::MINUS) || match(Token::PLUS) || match(Token::TILDE)) {
 		const Token operation = previous();
-		ExprPtr operand = parse_unary();
+		// Numeric/bitwise unary operators bind less tightly than exponentiation.
+		ExprPtr operand = operation.type == Token::BANG ? parse_unary() : parse_expression(11);
 		if (!operand) return {};
+		if (operand->tree_depth >= MAX_EXPRESSION_DEPTH) {
+			error_at(operation, "M1009", vformat("Expression tree exceeds the limit of %d.", MAX_EXPRESSION_DEPTH));
+			return operand;
+		}
 		auto result = expression(ExprKind::UNARY, merge_span(span_from_token(operation), operand->span));
+		result->tree_depth = operand->tree_depth + 1;
 		result->operation = operation.type;
 		result->right = operand;
 		return result;
@@ -412,12 +446,24 @@ ExprPtr MochaParser::parse_postfix() {
 				} while (match(Token::COMMA));
 			}
 			const Token end = consume(Token::PARENTHESIS_CLOSE, "Expected ')' after the arguments.");
+			int call_depth = result->tree_depth + 1;
+			for (const ExprPtr &argument : call->arguments) call_depth = MAX(call_depth, argument ? argument->tree_depth + 1 : 1);
+			if (call_depth > MAX_EXPRESSION_DEPTH) {
+				error_at(end, "M1009", vformat("Expression tree exceeds the limit of %d.", MAX_EXPRESSION_DEPTH));
+				return result;
+			}
+			call->tree_depth = call_depth;
 			call->span = merge_span(result->span, span_from_token(end));
 			result = call;
 		} else if (match(Token::PERIOD)) {
 			StringName name;
 			if (!consume_identifier(name, "after '.'")) return result;
 			auto member = expression(ExprKind::MEMBER, merge_span(result->span, span_from_token(previous())));
+			if (result->tree_depth >= MAX_EXPRESSION_DEPTH) {
+				error_at(previous(), "M1009", vformat("Expression tree exceeds the limit of %d.", MAX_EXPRESSION_DEPTH));
+				return result;
+			}
+			member->tree_depth = result->tree_depth + 1;
 			member->left = result;
 			member->name = name;
 			result = member;
@@ -425,6 +471,12 @@ ExprPtr MochaParser::parse_postfix() {
 			ExprPtr index = parse_expression();
 			const Token end = consume(Token::BRACKET_CLOSE, "Expected ']' after the index.");
 			auto indexed = expression(ExprKind::INDEX, merge_span(result->span, span_from_token(end)));
+			const int index_depth = MAX(result->tree_depth, index ? index->tree_depth : 1) + 1;
+			if (index_depth > MAX_EXPRESSION_DEPTH) {
+				error_at(end, "M1009", vformat("Expression tree exceeds the limit of %d.", MAX_EXPRESSION_DEPTH));
+				return result;
+			}
+			indexed->tree_depth = index_depth;
 			indexed->left = result;
 			indexed->right = index;
 			result = indexed;
@@ -499,6 +551,7 @@ Error MochaParser::parse(const String &p_source, const String &p_path, Program &
 	diagnostics.clear();
 	current = 0;
 	expression_depth = 0;
+	statement_depth = 0;
 	r_program = Program();
 
 	MochaTokenizerText tokenizer;

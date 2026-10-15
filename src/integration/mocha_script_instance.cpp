@@ -410,18 +410,19 @@ Variant MochaScriptInstance::call(const StringName &p_method, const Variant **p_
 			failure.reported = true;
 		}
 		MochaVM::publish_nested_failure(failure);
-		// INVALID_METHOD makes Object::callp fall through to a same-named native
-		// method. This Mocha method existed, so retain every other precise call
-		// error and map only INVALID_METHOD to a handled failure category.
-		if (r_error.error == GDEXTENSION_CALL_ERROR_INVALID_METHOD) {
-			r_error.error = GDEXTENSION_CALL_ERROR_INVALID_ARGUMENT;
-			r_error.argument = -1;
-		}
 	}
 	return result;
 }
 
 void MochaScriptInstance::notification(int p_what, bool p_reversed) {
+	struct ActiveNotification {
+		MochaScriptInstance *instance;
+		explicit ActiveNotification(MochaScriptInstance *p_instance) : instance(p_instance) { instance->active_calls++; }
+		~ActiveNotification() {
+			instance->active_calls--;
+			if (instance->active_calls == 0 && instance->free_requested) memdelete(instance);
+		}
+	} active(this);
 	if (script.is_null()) {
 		return;
 	}

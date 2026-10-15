@@ -16,6 +16,7 @@ class MochaParser {
 	std::vector<MochaTokenizer::Token> tokens;
 	size_t current = 0;
 	int expression_depth = 0;
+	int statement_depth = 0;
 	std::vector<Diagnostic> diagnostics;
 
 	const MochaTokenizer::Token &peek(int p_offset = 0) const;

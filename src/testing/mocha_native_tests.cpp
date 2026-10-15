@@ -15,6 +15,7 @@
 #include "runtime/mocha_vm.h"
 
 #include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
 
 namespace mocha_script {
@@ -118,6 +119,12 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			"\treturn result\n"
 			"func dynamic_suffix(value: Variant) -> Variant:\n"
 			"\treturn value + \"!\"\n"
+			"func power_associativity() -> float:\n"
+			"\treturn 2 ** 2 ** 3\n"
+			"func power_unary_precedence() -> float:\n"
+			"\treturn -2 ** 2\n"
+			"func power_explicit_unary() -> float:\n"
+			"\treturn - 2 ** 2\n"
 			"func recurse() -> int:\n"
 			"\treturn recurse()\n";
 	Program program;
@@ -193,14 +200,20 @@ godot::PackedStringArray MochaNativeTests::run() const {
 					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(3.5)) failures.push_back("analyzer: Variant arithmetic was incorrectly narrowed");
 					result = invoke("dynamic_suffix", { godot::String("Mocha") }, call_error, failure);
 					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant("Mocha!")) failures.push_back("analyzer: Variant plus String was rejected or narrowed");
+					result = invoke("power_associativity", {}, call_error, failure);
+					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(64.0)) failures.push_back("parser: exponentiation was not left-associative");
+					result = invoke("power_unary_precedence", {}, call_error, failure);
+					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(4.0)) failures.push_back("parser: signed numeric literal precedence diverged from the baseline");
+					result = invoke("power_explicit_unary", {}, call_error, failure);
+					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(-4.0)) failures.push_back("parser: explicit unary minus did not bind below exponentiation");
 					invoke("add", { godot::String("wrong") }, call_error, failure);
-					if (call_error.error != GDEXTENSION_CALL_ERROR_INVALID_ARGUMENT || failure.message.is_empty()) failures.push_back("vm: wrong external argument did not preserve INVALID_ARGUMENT");
+					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty()) failures.push_back("vm: wrong external argument was not reported as a handled runtime failure");
 					invoke("dynamic_store", {}, call_error, failure);
-					if (call_error.error != GDEXTENSION_CALL_ERROR_INVALID_ARGUMENT || failure.message.is_empty()) failures.push_back("vm: dynamically wrong typed local store did not preserve INVALID_ARGUMENT");
+					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty()) failures.push_back("vm: dynamic store failure exposed an unsafe Godot call error");
 					invoke("missing", { false }, call_error, failure);
-					if (call_error.error == GDEXTENSION_CALL_OK || failure.message.is_empty()) failures.push_back("vm: typed function fell off the end successfully");
+					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty()) failures.push_back("vm: typed fallthrough was not reported as a handled runtime failure");
 					invoke("recurse", {}, call_error, failure);
-					if (call_error.error == GDEXTENSION_CALL_OK || !failure.message.contains("depth")) failures.push_back("vm: recursion limit did not propagate as a call failure");
+					if (call_error.error != GDEXTENSION_CALL_OK || !failure.message.contains("depth")) failures.push_back("vm: recursion limit did not propagate as a handled runtime failure");
 				}
 			}
 		}
@@ -238,17 +251,74 @@ godot::PackedStringArray MochaNativeTests::run() const {
 		source += "\n";
 		Program invalid;
 		MochaParser parser;
-		if (parser.parse(source, "res://native_deep_ast.mocha", invalid) != godot::OK) {
-			failures.push_back("parser: long flat expression fixture failed before analysis");
+		if (parser.parse(source, "res://native_deep_ast.mocha", invalid) != godot::ERR_PARSE_ERROR) {
+			failures.push_back("parser: excessively deep flat expression tree was accepted");
+		} else {
+			bool found = false;
+			for (const Diagnostic &diagnostic : parser.get_diagnostics()) found |= diagnostic.code == "M1009";
+			if (!found) failures.push_back("parser: flat expression tree did not produce M1009");
+		}
+	}
+
+	{
+		godot::String source = "func too_nested() -> void:\n";
+		godot::String indent = "\t";
+		for (int i = 0; i < 140; ++i) {
+			source += indent + "if true:\n";
+			indent += "\t";
+		}
+		source += indent + "pass\n";
+		Program invalid;
+		MochaParser parser;
+		if (parser.parse(source, "res://native_deep_statements.mocha", invalid) != godot::ERR_PARSE_ERROR) {
+			failures.push_back("parser: excessively nested statements were accepted");
+		} else {
+			bool found = false;
+			for (const Diagnostic &diagnostic : parser.get_diagnostics()) found |= diagnostic.code == "M1010";
+			if (!found) failures.push_back("parser: nested statements did not produce M1010");
+		}
+	}
+
+	{
+		godot::String source = "func too_many_branches() -> void:\n\tif false:\n\t\tpass\n";
+		for (int i = 0; i < 300; ++i) source += "\telif false:\n\t\tpass\n";
+		Program invalid;
+		MochaParser parser;
+		if (parser.parse(source, "res://native_deep_elif.mocha", invalid) != godot::ERR_PARSE_ERROR) {
+			failures.push_back("parser: excessively long elif ladder was accepted");
+		} else {
+			bool found = false;
+			for (const Diagnostic &diagnostic : parser.get_diagnostics()) found |= diagnostic.code == "M1010";
+			if (!found) failures.push_back("parser: elif ladder did not produce M1010");
+		}
+	}
+
+	{
+		const godot::String invalid_operators =
+				"func bad_modulo() -> Variant:\n\treturn 1.0 % 1.0\n"
+				"func bad_shift() -> Variant:\n\treturn 1.0 << 1\n"
+				"func bad_order() -> bool:\n\treturn \"a\" < 1\n"
+				"func bad_negation() -> Variant:\n\treturn ~1.0\n"
+				"func bad_compound() -> void:\n\tvar text: String = \"a\"\n\ttext -= \"b\"\n";
+		Program invalid;
+		MochaParser parser;
+		if (parser.parse(invalid_operators, "res://native_invalid_operators.mocha", invalid) != godot::OK) {
+			failures.push_back("analyzer: invalid-operator fixture failed before analysis");
 		} else {
 			MochaAnalyzer analyzer;
-			if (analyzer.analyze(invalid, "res://native_deep_ast.mocha") != godot::ERR_COMPILATION_FAILED) {
-				failures.push_back("analyzer: excessively deep expression tree was accepted");
-			} else {
-				bool found = false;
-				for (const Diagnostic &diagnostic : analyzer.get_diagnostics()) found |= diagnostic.code == "M2028";
-				if (!found) failures.push_back("analyzer: deep expression tree did not produce M2028");
+			if (analyzer.analyze(invalid, "res://native_invalid_operators.mocha") != godot::ERR_COMPILATION_FAILED) {
+				failures.push_back("analyzer: statically invalid operators were accepted");
 			}
+		}
+	}
+
+	{
+		godot::Node *freed = memnew(godot::Node);
+		const godot::Variant stale = freed;
+		memdelete(freed);
+		godot::Variant converted;
+		if (MochaVM::accepts(stale, TypeRef::make(TypeKind::OBJECT, "Node"), converted)) {
+			failures.push_back("vm: freed object was accepted at a typed boundary");
 		}
 	}
 
