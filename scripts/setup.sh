@@ -31,13 +31,15 @@ actual_cpp = subprocess.run(
 if actual_cpp != expected_cpp:
     raise SystemExit(f"godot-cpp mismatch: expected {expected_cpp}, got {actual_cpp}")
 cpp_status = subprocess.run(
-    ["git", "-C", str(root / "godot-cpp"), "status", "--porcelain", "--untracked-files=no"],
+    ["git", "-C", str(root / "godot-cpp"), "status", "--porcelain", "--untracked-files=all"],
     check=True,
     text=True,
     stdout=subprocess.PIPE,
 ).stdout.strip()
 if cpp_status:
-    raise SystemExit(f"godot-cpp has tracked local modifications:\n{cpp_status}")
+    raise SystemExit(f"godot-cpp has local source modifications:\n{cpp_status}")
+if (root / "godot-cpp" / "custom.py").exists():
+    raise SystemExit("godot-cpp/custom.py would override the pinned build configuration")
 
 api = root / "api" / "extension_api.json"
 actual_api = hashlib.sha256(api.read_bytes()).hexdigest()
