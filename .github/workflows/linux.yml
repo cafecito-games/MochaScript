@@ -21,16 +21,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install pinned build tool
-        run: |
-          mkdir -p .ci
-          python - <<'PY' >.ci/scons-requirements.txt
-          import json
-          with open("upstream.lock.json", encoding="utf-8") as stream:
-              pin = json.load(stream)["build_tools"]["scons"]
-          print(f"scons=={pin['version']} --hash=sha256:{pin['wheel_sha256']}")
-          PY
-          python -m pip install --disable-pip-version-check --require-hashes \
-            --only-binary=:all: -r .ci/scons-requirements.txt
+        run: ./scripts/install_scons.sh
 
       - name: Download pinned Cafecito Godot editor
         shell: bash

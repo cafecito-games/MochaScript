@@ -7,14 +7,18 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$repo_root"
 
 command -v python3 >/dev/null || { echo "python3 is required" >&2; exit 1; }
-command -v scons >/dev/null || { echo "scons is required" >&2; exit 1; }
 command -v godot >/dev/null || { echo "godot is required" >&2; exit 1; }
+scons_command=$("$repo_root/scripts/resolve_scons.sh")
 
-git submodule update --init --recursive
+if [[ ! -e "$repo_root/godot-cpp/.git" ]] || ! git -C "$repo_root/godot-cpp" rev-parse --git-dir >/dev/null 2>&1; then
+    echo "godot-cpp is not initialized; run: git submodule update --init --recursive" >&2
+    exit 1
+fi
 
-python3 - <<'PY'
+MOCHA_SCONS_COMMAND="$scons_command" python3 - <<'PY'
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -24,7 +28,7 @@ lock = json.loads((root / "upstream.lock.json").read_text())
 
 expected_scons = lock["build_tools"]["scons"]["version"]
 scons_output = subprocess.run(
-    ["scons", "--version"],
+    [os.environ["MOCHA_SCONS_COMMAND"], "--version"],
     check=True,
     text=True,
     stdout=subprocess.PIPE,

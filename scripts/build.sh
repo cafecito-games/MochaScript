@@ -4,6 +4,7 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+scons_command=$("$repo_root/scripts/resolve_scons.sh")
 
 if [[ -r /sys/fs/cgroup/cpu.max ]]; then
     read -r quota period < /sys/fs/cgroup/cpu.max
@@ -47,5 +48,5 @@ for argument in "$@"; do
     esac
 done
 
-scons -C "$repo_root" target=template_debug -j"$jobs" "$@"
-scons -C "$repo_root" target=template_release -j"$jobs" "$@"
+"$scons_command" -C "$repo_root" target=template_debug -j"$jobs" "$@"
+"$scons_command" -C "$repo_root" target=template_release -j"$jobs" "$@"

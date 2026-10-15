@@ -21,10 +21,13 @@ SCons build into the user prefix with:
 ./scripts/install_scons.sh
 ```
 
-The helper uses `pip --user`, `--require-hashes`, and the immutable wheel hash from the lock; it does
-not require root access.
+The helper creates a hash-keyed virtualenv under the user's persistent data directory and installs
+only the pinned wheel with `--require-hashes --no-deps`. Build scripts resolve that managed
+executable directly, so no shell-profile or `PATH` edit is required and PEP 668 system-Python
+restrictions do not apply.
 
 ```sh
+git submodule update --init --recursive
 ./scripts/setup.sh
 ./scripts/verify.sh
 ```
