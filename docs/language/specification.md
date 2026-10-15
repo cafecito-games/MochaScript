@@ -48,6 +48,9 @@ source-located `M4001`. These rules do not depend on the engine build type or C+
 An external call with a wrong typed argument also preserves Godot's `INVALID_ARGUMENT`, argument
 index, and expected carrier while publishing the source-located Mocha failure. Failures inside a
 nested Mocha call remain script runtime failures rather than being misattributed to the host caller.
+Their originating script path and span are preserved; an engine-mediated propagation also records
+the first Mocha call site. Indirect dispatch through `Object.call` and `callv` cannot turn a nested
+failure into a successful `null` result.
 
 Untyped declarations infer and retain the initializer's static carrier type, so `var value = 1`
 cannot later store a `String` (`M2013`); an explicit `: Variant` is never narrowed. Statically known
@@ -65,9 +68,9 @@ remains a high-precedence unary operator.
 
 Storage for every member is first populated with its carrier default, then initializers run in
 declaration order. An unqualified read of an earlier member sees its initialized value; a read of
-the current or a later explicitly typed member sees its carrier default. A forward read of an
-untyped member whose carrier has not yet been inferred is rejected with `M2032`, preventing analysis
-from accepting a `Variant` read that becomes a different runtime default. `self` is unavailable
+the current or a later explicitly typed member sees its carrier default. A current or forward read
+of an untyped member whose carrier has not yet been inferred is rejected with `M2032`, preventing
+analysis from accepting a `Variant` read that becomes a different runtime default. `self` is unavailable
 until Godot attaches the completed script instance, so `self`-qualified access and unqualified calls
 through implicit `self` are rejected statically with `M2030`. The self-free
 `mocha_language_version()` intrinsic is the sole unqualified-call exception during initialization.

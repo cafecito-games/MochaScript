@@ -35,7 +35,7 @@ only when an entry or a MochaScript specification test says it is.
 | global utility functions | unsupported | Unqualified unresolved calls target the host object; GDScript globals such as `print` are not resolved. | specification and host-call architecture |
 | language version intrinsic | intentional divergence | `mocha_language_version()` returns Mocha bootstrap metadata. | vertical slice canary |
 | intrinsic and constant names | intentional divergence | The intrinsic and `PI`/`TAU`/`INF`/`NAN` names are reserved and cannot be shadowed. | native parser/analyzer tests |
-| member initialization | intentional divergence | All carrier defaults are installed first and initializers run in declaration order, so current/later explicitly typed member reads observe defaults. Forward reads whose carrier still requires inference report `M2032`; `self` access and implicit-self calls before attachment report `M2030`. | native VM and analyzer tests |
+| member initialization | intentional divergence | All carrier defaults are installed first and initializers run in declaration order, so current/later explicitly typed member reads observe defaults. Current or forward reads whose carrier still requires inference report `M2032`; `self` access and implicit-self calls before attachment report `M2030`. | native VM and analyzer tests |
 | GDScript interoperability | unsupported | One Godot object has one script instance; Mocha does not inherit from or delegate to GDScript. | architecture boundary and instance test |
 
 ## Status vocabulary

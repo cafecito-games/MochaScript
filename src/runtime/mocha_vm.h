@@ -17,7 +17,12 @@ namespace mocha_script {
 struct RuntimeFailure {
 	String code;
 	String message;
+	// Originating module and instruction.
+	String path;
 	SourceSpan span;
+	// First engine-mediated Mocha call that propagated this origin outward.
+	String call_path;
+	SourceSpan call_span;
 	bool reported = false;
 	bool preserve_call_error = false;
 };
@@ -41,10 +46,9 @@ public:
 		return convert_value(p_value, p_type, r_converted);
 	}
 	// A script instance reached through a host `callp` reports a nested VM failure
-	// here so the outer VM frame cannot mistake its nil result for success. Returns
-	// true when an enclosing matching call captured the failure for propagation.
-	static bool publish_nested_failure(const RuntimeFailure &p_failure, uint64_t p_owner_id,
-			const StringName &p_method);
+	// here so the outer VM frame cannot mistake its nil result for success. Capture
+	// matches the receiver identity, including calls routed through Object.call/callv.
+	static bool publish_nested_failure(const RuntimeFailure &p_failure, uint64_t p_owner_id);
 };
 
 } // namespace mocha_script

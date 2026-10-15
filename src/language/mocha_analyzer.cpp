@@ -432,7 +432,6 @@ Error MochaAnalyzer::analyze(Program &p_program, const String &p_path) {
 	Context member_context;
 	member_context.in_member_initializer = true;
 	for (MemberDecl &member : p_program.members) {
-		pending_inferred_members.erase(member.name);
 		if (!member.initializer) continue;
 		const TypeRef value = analyze_expression(member.initializer, member_context);
 		if (!member.has_explicit_type && member.type.kind == TypeKind::ANY &&
@@ -442,6 +441,7 @@ Error MochaAnalyzer::analyze(Program &p_program, const String &p_path) {
 		} else if (!assignable(member.type, value)) {
 			report(member.span, "M2022", vformat("Cannot initialize member '%s' of type %s with %s.", String(member.name), type_name(member.type), type_name(value)));
 		}
+		pending_inferred_members.erase(member.name);
 	}
 	pending_inferred_members.clear();
 

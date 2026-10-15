@@ -80,14 +80,14 @@ Variant::Type variant_type_for(const TypeRef &p_type) {
 struct NestedFailureCapture {
 	RuntimeFailure failure;
 	uint64_t owner_id = 0;
-	StringName method;
-	NestedFailureCapture(uint64_t p_owner_id, const StringName &p_method) : owner_id(p_owner_id), method(p_method) {
+	explicit NestedFailureCapture(uint64_t p_owner_id) : owner_id(p_owner_id) {
 		vm_failure_captures.push_back(this);
 	}
 	~NestedFailureCapture() { vm_failure_captures.pop_back(); }
 };
 
-bool take_nested_failure(const RuntimeFailure &p_captured, const SourceSpan &p_call_span,
+bool take_nested_failure(const RuntimeFailure &p_captured, const String &p_call_path,
+		const SourceSpan &p_call_span,
 		RuntimeFailure &r_failure) {
 	if (p_captured.message.is_empty()) return false;
 	r_failure = p_captured;
@@ -95,7 +95,10 @@ bool take_nested_failure(const RuntimeFailure &p_captured, const SourceSpan &p_c
 	// arguments of the outer host entry. Keeping INVALID_ARGUMENT metadata here
 	// can make Godot inspect an argument that the outer call does not have.
 	r_failure.preserve_call_error = false;
-	r_failure.span = p_call_span;
+	if (r_failure.call_path.is_empty()) {
+		r_failure.call_path = p_call_path;
+		r_failure.call_span = p_call_span;
+	}
 	return true;
 }
 
@@ -261,6 +264,7 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 		Object *p_owner, Vector<Variant> &r_members, const Variant **p_arguments,
 		int p_argument_count, GDExtensionCallError &r_call_error,
 		RuntimeFailure &r_failure, const SourceSpan &p_entry_span, bool p_external_entry) {
+	if (r_failure.path.is_empty()) r_failure.path = p_module.path;
 	r_call_error = {};
 	r_call_error.error = GDEXTENSION_CALL_OK;
 	const uint64_t owner_id = p_owner != nullptr ? p_owner->get_instance_id() : 0;
@@ -418,7 +422,7 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				{
 					// Property access may execute arbitrary engine callbacks. This shield
 					// prevents their failures from leaking into an enclosing direct call.
-					NestedFailureCapture capture(0, StringName());
+					NestedFailureCapture capture(0);
 					value = container.get(key, &valid);
 				}
 				if (!owner_is_alive()) { fail(r_failure, instruction.span, "The MochaScript owner was freed during an index operation."); return {}; }
@@ -432,7 +436,7 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				Variant value;
 				{
 					// This is a callback shield, not a direct Mocha call capture.
-					NestedFailureCapture capture(0, StringName());
+					NestedFailureCapture capture(0);
 					value = receiver.get_named(instruction.name, valid);
 				}
 				if (!owner_is_alive()) { fail(r_failure, instruction.span, "The MochaScript owner was freed during a member read."); return {}; }
@@ -462,7 +466,7 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				Variant result;
 				bool valid = false;
 				{
-					NestedFailureCapture shield(0, StringName());
+					NestedFailureCapture shield(0);
 					Variant::evaluate(operation, value, Variant(), result, valid);
 				}
 				if (!owner_is_alive()) { fail(r_failure, instruction.span, "The MochaScript owner was freed during a unary operation."); return {}; }
@@ -494,7 +498,7 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				Variant result;
 				bool valid = false;
 				{
-					NestedFailureCapture shield(0, StringName());
+					NestedFailureCapture shield(0);
 					Variant::evaluate(operation, left, right, result, valid);
 				}
 				if (!owner_is_alive()) { fail(r_failure, instruction.span, "The MochaScript owner was freed during a binary operation."); return {}; }
@@ -529,16 +533,16 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 					} else if (const CompiledFunction *callee = p_module.find_function(instruction.name)) {
 						result = execute(p_module, *callee, p_owner, r_members, pointers.data(), int(pointers.size()), nested_error, r_failure, instruction.span, false);
 					} else {
-						NestedFailureCapture capture(receiver_id, instruction.name);
+						NestedFailureCapture capture(receiver_id);
 						receiver.callp(instruction.name, pointers.data(), int(pointers.size()), result, nested_error);
 						nested_failure = capture.failure;
 					}
 				} else {
-					NestedFailureCapture capture(receiver_id, instruction.name);
+					NestedFailureCapture capture(receiver_id);
 					receiver.callp(instruction.name, pointers.data(), int(pointers.size()), result, nested_error);
 					nested_failure = capture.failure;
 				}
-				if (take_nested_failure(nested_failure, instruction.span, r_failure)) {
+				if (take_nested_failure(nested_failure, p_module.path, instruction.span, r_failure)) {
 					r_call_error.error = GDEXTENSION_CALL_ERROR_INVALID_ARGUMENT;
 					return {};
 				}
@@ -585,6 +589,7 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 
 Error MochaVM::initialize(const CompiledModule &p_module, Object *p_owner,
 		Vector<Variant> &r_members, RuntimeFailure &r_failure) {
+	r_failure = {};
 	r_members.resize(int64_t(p_module.members.size()));
 	for (size_t index = 0; index < p_module.members.size(); ++index) {
 		r_members.write[int64_t(index)] = runtime_default(p_module.members[index].type);
@@ -613,11 +618,10 @@ Variant MochaVM::call(const CompiledModule &p_module, const CompiledFunction &p_
 	return result;
 }
 
-bool MochaVM::publish_nested_failure(const RuntimeFailure &p_failure, uint64_t p_owner_id,
-		const StringName &p_method) {
+bool MochaVM::publish_nested_failure(const RuntimeFailure &p_failure, uint64_t p_owner_id) {
 	if (p_failure.message.is_empty() || vm_failure_captures.empty()) return false;
 	NestedFailureCapture *capture = vm_failure_captures.back();
-	if (capture->owner_id != p_owner_id || (!p_method.is_empty() && capture->method != p_method)) return false;
+	if (capture->owner_id != p_owner_id) return false;
 	capture->failure = p_failure;
 	capture->failure.preserve_call_error = false;
 	return true;

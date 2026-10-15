@@ -30,8 +30,8 @@ Updated: 2026-10-15
 - `mocha_language_version()` proves intentional Mocha-only evolution across all execution layers.
 - Runtime failures carry exact tested source spans; failures captured across an engine-mediated
   nested Mocha call are re-attributed to the call site without leaking inner Godot argument metadata.
-- Omitted declarations infer carriers, explicit `Variant` remains dynamic, and unsafe forward reads
-  of members whose carrier is not yet inferred fail statically with `M2032`.
+- Omitted declarations infer carriers, explicit `Variant` remains dynamic, and unsafe current or
+  forward reads of members whose carrier is not yet inferred fail statically with `M2032`.
 - Source materialization, create-only import, and review-only upstream delta scripts are verified.
 - Explicit upstream review is read-only: it disables optional Git locks and lazy fetches, verifies
   all required provenance objects locally, and keeps its coordination lock in MochaScript's cache.

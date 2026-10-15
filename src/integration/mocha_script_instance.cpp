@@ -392,10 +392,16 @@ Variant MochaScriptInstance::call(const StringName &p_method, const Variant **p_
 	Variant result = MochaVM::call(*module, *function, owner, members,
 			p_arguments, p_argument_count, r_error, failure);
 	if (!failure.message.is_empty()) {
-		const bool captured = MochaVM::publish_nested_failure(failure, call_owner_id, p_method);
+		const bool captured = MochaVM::publish_nested_failure(failure, call_owner_id);
 		if (!captured && !failure.reported) {
-			UtilityFunctions::push_error(vformat("%s:%d:%d: %s: %s", script->get_path(), failure.span.line,
-					failure.span.column, failure.code, failure.message));
+			const String failure_path = failure.path.is_empty() ? script->get_path() : failure.path;
+			String message = vformat("%s:%d:%d: %s: %s", failure_path, failure.span.line,
+					failure.span.column, failure.code, failure.message);
+			if (!failure.call_path.is_empty()) {
+				message += vformat(" (called from %s:%d:%d)", failure.call_path,
+						failure.call_span.line, failure.call_span.column);
+			}
+			UtilityFunctions::push_error(message);
 			failure.reported = true;
 		}
 	}

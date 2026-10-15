@@ -60,6 +60,7 @@ struct CompiledMember {
 };
 
 struct CompiledModule {
+	String path;
 	StringName base_type;
 	std::vector<CompiledMember> members;
 	CompiledFunction initializer;

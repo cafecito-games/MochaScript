@@ -268,6 +268,7 @@ Error MochaCompiler::compile(const Program &p_program, const String &p_path, std
 	diagnostics.clear();
 	members.clear();
 	module = std::make_shared<CompiledModule>();
+	module->path = path;
 	module->base_type = p_program.base_type;
 	for (const MemberDecl &member : p_program.members) {
 		members.insert(member.name, int64_t(module->members.size()));

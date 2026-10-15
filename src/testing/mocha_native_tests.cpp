@@ -251,7 +251,9 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			"func recurse() -> int:\n"
 			"\treturn recurse()\n"
 			"func explicit_forward_wrong() -> int:\n"
-			"\treturn self.add(\"wrong\")\n";
+			"\treturn self.add(\"wrong\")\n"
+			"func indirect_failure() -> Variant:\n"
+			"\treturn self.call(\"dynamic_modulo\", \"%d\")\n";
 	Program program;
 	MochaParser parser;
 	if (parser.parse(executable, "res://native_pipeline.mocha", program) != godot::OK) {
@@ -282,6 +284,11 @@ godot::PackedStringArray MochaNativeTests::run() const {
 					};
 					auto failure_at = [](const RuntimeFailure &p_failure, int p_line, int p_column) {
 						return p_failure.span.line == p_line && p_failure.span.column == p_column;
+					};
+					auto called_at = [](const RuntimeFailure &p_failure, const godot::String &p_path,
+							int p_line, int p_column) {
+						return p_failure.call_path == p_path && p_failure.call_span.line == p_line &&
+								p_failure.call_span.column == p_column;
 					};
 					GDExtensionCallError call_error;
 					godot::Variant result = invoke("add", { int64_t(40) }, call_error, failure);
@@ -392,6 +399,7 @@ godot::PackedStringArray MochaNativeTests::run() const {
 					if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" || !failure_at(failure, 83, 9)) failures.push_back("vm: nested wrong argument did not fail at 83:9");
 					godot::Ref<MochaScript> nested_script;
 					nested_script.instantiate();
+					nested_script->set_diagnostic_path_for_validation("res://native_nested_runtime.mocha");
 					nested_script->_set_source_code(executable);
 					godot::Ref<godot::RefCounted> nested_owner;
 					nested_owner.instantiate();
@@ -408,8 +416,17 @@ godot::PackedStringArray MochaNativeTests::run() const {
 							MochaVM::call(*module, *module->find_function("explicit_forward_wrong"), nested_owner.ptr(), nested_members,
 									nullptr, 0, call_error, failure);
 							if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
-									failure.preserve_call_error || !failure_at(failure, 105, 9)) {
+									failure.preserve_call_error || failure.path != "res://native_nested_runtime.mocha" ||
+									!failure_at(failure, 11, 1) ||
+									!called_at(failure, "res://native_pipeline.mocha", 105, 9)) {
 								failures.push_back("vm: explicit nested wrong argument leaked unsafe host call metadata");
+							}
+							MochaVM::call(*module, *module->find_function("indirect_failure"), nested_owner.ptr(), nested_members,
+									nullptr, 0, call_error, failure);
+							if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
+									failure.path != "res://native_nested_runtime.mocha" || !failure_at(failure, 58, 9) ||
+									!called_at(failure, "res://native_pipeline.mocha", 107, 9)) {
+								failures.push_back("vm: indirect nested call treated a script failure as a successful nil result");
 							}
 						}
 						nested_owner->set_script(godot::Variant());
@@ -438,6 +455,18 @@ godot::PackedStringArray MochaNativeTests::run() const {
 		if (parser.parse("extends RefCounted\n\tvar value = 1\n", "res://native_overindent.mocha", invalid) != godot::ERR_PARSE_ERROR ||
 				parser.get_diagnostics().empty() || parser.get_diagnostics()[0].code != "M1008") {
 			failures.push_back("parser: stray top-level indentation did not terminate with M1008");
+		}
+	}
+
+	{
+		Program invalid;
+		MochaParser invalid_parser;
+		invalid_parser.parse("var items = [items]\n", "res://native_self_inferred_member.mocha", invalid);
+		MochaAnalyzer analyzer;
+		if (analyzer.analyze(invalid, "res://native_self_inferred_member.mocha") != godot::ERR_COMPILATION_FAILED ||
+				analyzer.get_diagnostics().empty() || analyzer.get_diagnostics()[0].code != "M2032" ||
+				analyzer.get_diagnostics()[0].span.line != 1 || analyzer.get_diagnostics()[0].span.column != 14) {
+			failures.push_back("analyzer: self-read of an uninferred member did not produce M2032 at 1:14");
 		}
 	}
 
