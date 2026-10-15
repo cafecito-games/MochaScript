@@ -12,6 +12,12 @@ func _write_script(path: String, value: int) -> bool:
 
 func _initialize() -> void:
 	var failures: Array[String] = []
+	var release_smoke := OS.get_cmdline_user_args().has("--release-smoke")
+	var native_tests_registered := ClassDB.class_exists(&"MochaNativeTests")
+	if release_smoke and native_tests_registered:
+		failures.append("release library exposed the debug-only MochaNativeTests class")
+	elif not release_smoke and not native_tests_registered:
+		failures.append("debug library did not register MochaNativeTests")
 	var recognized := ResourceLoader.get_recognized_extensions_for_type("MochaScript")
 	if not recognized.has("mocha"):
 		failures.append("MochaScript does not recognize .mocha")

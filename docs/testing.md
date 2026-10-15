@@ -7,9 +7,11 @@ Run the complete local suite with:
 ```
 
 It validates immutable pins, uses the cgroup CPU quota with a four-job ceiling, builds debug and
-release extension libraries with target-specific object caches, load-probes the release library and
-its entry symbol, imports the fixture project, and runs these isolated sentinels exactly once. The
-native C++ test harness is registered only in debug builds and is excluded from the release library.
+release extension libraries with target-specific object caches, and load-probes the release library
+and its entry symbol. It then imports the fixture project and runs these isolated sentinels exactly
+once against the debug library. A copied project remaps its debug manifest slot to the release
+library and repeats editor, recognition, and VM-execution smoke tests against the optimized binary.
+That lane also proves the debug-only native C++ test class is not registered in release builds.
 
 - `MOCHA_RECOGNITION_OK`: language/resource identity and source preservation;
 - `MOCHA_EDITOR_OK`: non-tool scripts use placeholders and cannot instantiate in editor context,

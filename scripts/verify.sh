@@ -70,14 +70,21 @@ frontend_log="$log_dir/frontend.log"
 execution_log="$log_dir/execution.log"
 native_log="$log_dir/native.log"
 bootstrap_corpus_log="$log_dir/bootstrap-corpus.log"
+release_editor_log="$log_dir/release-editor-import.log"
+release_editor_test_log="$log_dir/release-editor-test.log"
+release_recognition_log="$log_dir/release-recognition.log"
+release_execution_log="$log_dir/release-execution.log"
 
-run_godot() {
+run_godot_in_project() {
     local label=$1
     local log=$2
-    shift 2
+    local project_path=$3
+    local sandbox=$4
+    shift 4
     set +e
-    XDG_DATA_HOME="$log_dir/data" XDG_CONFIG_HOME="$log_dir/config" XDG_CACHE_HOME="$log_dir/cache" \
-        timeout 60s godot --headless --path "$repo_root/project" "$@" >"$log" 2>&1
+    XDG_DATA_HOME="$log_dir/$sandbox/data" XDG_CONFIG_HOME="$log_dir/$sandbox/config" \
+        XDG_CACHE_HOME="$log_dir/$sandbox/cache" \
+        timeout 60s godot --headless --path "$project_path" "$@" >"$log" 2>&1
     local status=$?
     set -e
     if (( status != 0 )); then
@@ -88,6 +95,13 @@ run_godot() {
     fi
 }
 
+run_godot() {
+    local label=$1
+    local log=$2
+    shift 2
+    run_godot_in_project "$label" "$log" "$repo_root/project" debug "$@"
+}
+
 run_godot "editor import" "$editor_log" --editor --quit
 run_godot "editor behavior test" "$editor_test_log" --editor --quit-after 2 --script res://tests/editor_test.gd
 run_godot "recognition test" "$recognition_log" --script res://tests/recognition_test.gd
@@ -96,6 +110,32 @@ run_godot "frontend test" "$frontend_log" --script res://tests/frontend_test.gd
 run_godot "execution test" "$execution_log" --script res://tests/vertical_slice_test.gd
 run_godot "native test" "$native_log" --script res://tests/native_test.gd
 run_godot "bootstrap corpus test" "$bootstrap_corpus_log" --script res://tests/bootstrap_corpus_test.gd
+
+release_project="$log_dir/release-project"
+python3 - "$repo_root/project" "$release_project" <<'PY'
+from pathlib import Path
+import shutil
+import sys
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+shutil.copytree(source, target, ignore=shutil.ignore_patterns(".godot"))
+manifest = target / "bin" / "mocha_script.gdextension"
+text = manifest.read_text(encoding="utf-8")
+debug_library = 'linux.x86_64.single.debug = "./linux/libmocha_script.linux.template_debug.x86_64.so"'
+release_library = 'linux.x86_64.single.debug = "./linux/libmocha_script.linux.template_release.x86_64.so"'
+if text.count(debug_library) != 1:
+    raise SystemExit("release smoke test could not identify exactly one debug library mapping")
+manifest.write_text(text.replace(debug_library, release_library), encoding="utf-8")
+PY
+
+run_godot_in_project "release editor import" "$release_editor_log" "$release_project" release --editor --quit
+run_godot_in_project "release editor behavior test" "$release_editor_test_log" "$release_project" release \
+    --editor --quit-after 2 --script res://tests/editor_test.gd
+run_godot_in_project "release recognition test" "$release_recognition_log" "$release_project" release \
+    --script res://tests/recognition_test.gd -- --release-smoke
+run_godot_in_project "release execution test" "$release_execution_log" "$release_project" release \
+    --script res://tests/vertical_slice_test.gd
 
 sentinel_count=$(grep -c '^MOCHA_RECOGNITION_OK$' "$recognition_log" || true)
 if [[ "$sentinel_count" != "1" ]]; then
@@ -146,6 +186,16 @@ if [[ "$bootstrap_sentinel_count" != "1" ]]; then
     exit 1
 fi
 
+release_editor_sentinel_count=$(grep -c '^MOCHA_EDITOR_OK$' "$release_editor_test_log" || true)
+release_recognition_sentinel_count=$(grep -c '^MOCHA_RECOGNITION_OK$' "$release_recognition_log" || true)
+release_execution_sentinel_count=$(grep -c '^MOCHA_EXECUTION_OK$' "$release_execution_log" || true)
+if [[ "$release_editor_sentinel_count" != "1" || "$release_recognition_sentinel_count" != "1" ||
+        "$release_execution_sentinel_count" != "1" ]]; then
+    echo "Release extension smoke tests did not emit every expected sentinel" >&2
+    cat "$release_editor_test_log" "$release_recognition_log" "$release_execution_log" >&2
+    exit 1
+fi
+
 editor_test_errors=$(grep -Ei 'SCRIPT ERROR|ERROR:|crash|segmentation fault' "$editor_test_log" |
     grep -Ev "^ERROR: [0-9]+ RID allocations of type '(N16RendererViewport8ViewportE|PN13RendererDummy14TextureStorage12DummyTextureE|N17RendererSceneCull8ScenarioE|PN18TextServerAdvanced22ShapedTextDataAdvancedE|PN18TextServerAdvanced12FontAdvancedE)' were leaked at exit\.$" || true)
 if [[ -n "$editor_test_errors" ]]; then
@@ -154,9 +204,18 @@ if [[ -n "$editor_test_errors" ]]; then
     exit 1
 fi
 
-if grep -Eiq 'SCRIPT ERROR|ERROR:|crash|segmentation fault' "$editor_log" "$recognition_log" "$tokenizer_log" "$frontend_log" "$execution_log" "$native_log" "$bootstrap_corpus_log"; then
+
+release_editor_test_errors=$(grep -Ei 'SCRIPT ERROR|ERROR:|crash|segmentation fault' "$release_editor_test_log" |
+    grep -Ev "^ERROR: [0-9]+ RID allocations of type '(N16RendererViewport8ViewportE|PN13RendererDummy14TextureStorage12DummyTextureE|N17RendererSceneCull8ScenarioE|PN18TextServerAdvanced22ShapedTextDataAdvancedE|PN18TextServerAdvanced12FontAdvancedE)' were leaked at exit\.$" || true)
+if [[ -n "$release_editor_test_errors" ]]; then
+    echo "Godot emitted an unexpected error during release editor-context verification" >&2
+    printf '%s\n' "$release_editor_test_errors" >&2
+    exit 1
+fi
+
+if grep -Eiq 'SCRIPT ERROR|ERROR:|crash|segmentation fault' "$editor_log" "$recognition_log" "$tokenizer_log" "$frontend_log" "$execution_log" "$native_log" "$bootstrap_corpus_log" "$release_editor_log" "$release_recognition_log" "$release_execution_log"; then
     echo "Godot emitted an unexpected error during verification" >&2
-    grep -Ein 'SCRIPT ERROR|ERROR:|crash|segmentation fault' "$editor_log" "$recognition_log" "$tokenizer_log" "$frontend_log" "$execution_log" "$native_log" "$bootstrap_corpus_log" >&2
+    grep -Ein 'SCRIPT ERROR|ERROR:|crash|segmentation fault' "$editor_log" "$recognition_log" "$tokenizer_log" "$frontend_log" "$execution_log" "$native_log" "$bootstrap_corpus_log" "$release_editor_log" "$release_recognition_log" "$release_execution_log" >&2
     exit 1
 fi
 
@@ -169,7 +228,9 @@ if ! cmp -s "$uid_snapshot_before" "$uid_snapshot_after"; then
 fi
 
 rm -f -- "$editor_log" "$editor_test_log" "$recognition_log" "$tokenizer_log" "$frontend_log" \
-    "$execution_log" "$native_log" "$bootstrap_corpus_log" "$uid_snapshot_before" "$uid_snapshot_after"
-rm -rf -- "$log_dir/data" "$log_dir/config" "$log_dir/cache"
+    "$execution_log" "$native_log" "$bootstrap_corpus_log" "$release_editor_log" \
+    "$release_editor_test_log" "$release_recognition_log" "$release_execution_log" \
+    "$uid_snapshot_before" "$uid_snapshot_after"
+rm -rf -- "$log_dir/debug" "$log_dir/release" "$release_project"
 rmdir -- "$log_dir"
 echo "MOCHA_VERIFY_OK"

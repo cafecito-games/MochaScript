@@ -25,8 +25,9 @@ jobs, verifies the build-tool version, godot-cpp checkout, extension API, and in
 binary pins, builds the extension, imports the fixture project headlessly, and requires every
 layer-specific sentinel plus the final `MOCHA_VERIFY_OK` result. Both debug and release extension
 libraries must build, the release library and entry symbol are load-probed without shipping the
-native test harness, and every script resource under `project/` must have a committed UID sidecar
-that editor import neither rewrites nor leaves untracked. `materialize_upstream.sh` verifies
+native test harness, and isolated editor/recognition/execution smoke tests run against the release
+binary. Every script resource under `project/` must have a committed UID sidecar that editor import
+neither rewrites nor leaves untracked. `materialize_upstream.sh` verifies
 the custom-Godot/Godot source and import pins; Linux CI additionally verifies the downloaded SCons
 wheel and editor archive hashes.
 
