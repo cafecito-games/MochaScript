@@ -22,6 +22,7 @@ class MochaCompiler {
 
 	void report(const SourceSpan &p_span, const String &p_code, const String &p_message);
 	int64_t emit(OpCode p_opcode, const SourceSpan &p_span, int64_t p_argument = 0);
+	void emit_default(const TypeRef &p_type, const SourceSpan &p_span);
 	void compile_expression(const ExprPtr &p_expression);
 	void compile_statement(const StmtPtr &p_statement);
 	void compile_block(const std::vector<StmtPtr> &p_block);

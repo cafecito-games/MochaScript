@@ -51,6 +51,8 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			"var default_array: Array\n"
 			"var target = null\n"
 			"var touched: int\n"
+			"var forward: int = later\n"
+			"var later: int = 3\n"
 			"func add(value: int) -> int:\n"
 			"\tvar numbers: Array = [value, seed]\n"
 			"\tif numbers[0] > 0:\n"
@@ -59,6 +61,13 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			"func half() -> float:\n"
 			"\tvar value: float = 1\n"
 			"\treturn value / 2.0\n"
+			"func fresh_array_size() -> int:\n"
+			"\tvar values: Array\n"
+			"\tvalues.append(1)\n"
+			"\treturn values.size()\n"
+			"func initializer_scope() -> int:\n"
+			"\tvar seed: int = seed\n"
+			"\treturn seed\n"
 			"func mark() -> bool:\n"
 			"\ttouched += 1\n"
 			"\treturn true\n"
@@ -125,8 +134,24 @@ godot::PackedStringArray MochaNativeTests::run() const {
 							members[module->find_member("default_array")].get_type() != godot::Variant::ARRAY) {
 						failures.push_back("vm: typed declaration defaults have incorrect carriers");
 					}
+					godot::Vector<godot::Variant> second_members;
+					RuntimeFailure second_failure;
+					if (MochaVM::initialize(*module, owner.ptr(), second_members, second_failure) != godot::OK) {
+						failures.push_back("vm: second member initialization failed");
+					} else {
+						godot::Array first_array = members[module->find_member("default_array")];
+						first_array.push_back(1);
+						godot::Array second_array = second_members[module->find_member("default_array")];
+						if (!second_array.is_empty()) failures.push_back("vm: collection member default was shared between instances");
+					}
+					if (int64_t(members[module->find_member("forward")]) != 0) failures.push_back("vm: forward member read did not see its typed default");
 					result = invoke("half", {}, call_error, failure);
 					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(0.5)) failures.push_back("vm: local int-to-float widening failed");
+					result = invoke("fresh_array_size", {}, call_error, failure);
+					godot::Variant second_fresh = invoke("fresh_array_size", {}, call_error, failure);
+					if (result != godot::Variant(int64_t(1)) || second_fresh != godot::Variant(int64_t(1))) failures.push_back("vm: collection local default was shared between calls");
+					result = invoke("initializer_scope", {}, call_error, failure);
+					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(int64_t(2))) failures.push_back("compiler: local was visible inside its own initializer");
 					result = invoke("short_and", {}, call_error, failure);
 					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(false)) failures.push_back("compiler: short-circuit and failed");
 					result = invoke("short_or", {}, call_error, failure);
@@ -147,6 +172,17 @@ godot::PackedStringArray MochaNativeTests::run() const {
 					if (call_error.error == GDEXTENSION_CALL_OK || !failure.message.contains("depth")) failures.push_back("vm: recursion limit did not propagate as a call failure");
 				}
 			}
+		}
+	}
+
+	{
+		Program invalid;
+		MochaParser invalid_parser;
+		invalid_parser.parse("func bad(value: void) -> void:\n\tpass\n", "res://native_void_parameter.mocha", invalid);
+		MochaAnalyzer analyzer;
+		if (analyzer.analyze(invalid, "res://native_void_parameter.mocha") != godot::ERR_COMPILATION_FAILED ||
+				analyzer.get_diagnostics().empty() || analyzer.get_diagnostics()[0].code != "M2026") {
+			failures.push_back("analyzer: void parameter did not produce M2026");
 		}
 	}
 

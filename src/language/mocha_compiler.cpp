@@ -7,9 +7,6 @@
 
 #include "language/mocha_compiler.h"
 
-#include <godot_cpp/variant/array.hpp>
-#include <godot_cpp/variant/dictionary.hpp>
-
 namespace mocha_script {
 
 namespace {
@@ -20,8 +17,6 @@ Variant default_value(const TypeRef &p_type) {
 		case TypeKind::INT: return int64_t(0);
 		case TypeKind::FLOAT: return 0.0;
 		case TypeKind::STRING: return String();
-		case TypeKind::ARRAY: return Array();
-		case TypeKind::DICTIONARY: return Dictionary();
 		default: return Variant();
 	}
 }
@@ -45,6 +40,17 @@ int64_t MochaCompiler::emit(OpCode p_opcode, const SourceSpan &p_span, int64_t p
 	instruction.argument = p_argument;
 	function->code.push_back(instruction);
 	return int64_t(function->code.size() - 1);
+}
+
+void MochaCompiler::emit_default(const TypeRef &p_type, const SourceSpan &p_span) {
+	if (p_type.kind == TypeKind::ARRAY) {
+		emit(OpCode::MAKE_ARRAY, p_span, 0);
+	} else if (p_type.kind == TypeKind::DICTIONARY) {
+		emit(OpCode::MAKE_DICTIONARY, p_span, 0);
+	} else {
+		const int64_t value = emit(OpCode::PUSH_CONSTANT, p_span);
+		function->code[size_t(value)].operand = default_value(p_type);
+	}
 }
 
 MochaTokenizer::Token::Type MochaCompiler::compound_operation(MochaTokenizer::Token::Type p_operation) const {
@@ -168,15 +174,14 @@ void MochaCompiler::compile_statement(const StmtPtr &p_statement) {
 	switch (p_statement->kind) {
 		case StatementKind::VARIABLE: {
 			const int64_t local = function->local_count++;
-			locals.insert(p_statement->name, local);
 			function->local_types.push_back(p_statement->declared_type);
 			if (p_statement->expression) {
 				compile_expression(p_statement->expression);
 			} else {
-				const int64_t value = emit(OpCode::PUSH_CONSTANT, p_statement->span);
-				function->code[value].operand = default_value(p_statement->declared_type);
+				emit_default(p_statement->declared_type, p_statement->span);
 			}
 			emit(OpCode::STORE_LOCAL, p_statement->span, local);
+			locals.insert(p_statement->name, local);
 		} break;
 		case StatementKind::EXPRESSION:
 			compile_expression(p_statement->expression);
@@ -276,8 +281,7 @@ Error MochaCompiler::compile(const Program &p_program, const String &p_path, std
 		if (p_program.members[index].initializer) {
 			compile_expression(p_program.members[index].initializer);
 		} else {
-			const int64_t value = emit(OpCode::PUSH_CONSTANT, p_program.members[index].span);
-			function->code[value].operand = default_value(p_program.members[index].type);
+			emit_default(p_program.members[index].type, p_program.members[index].span);
 		}
 		emit(OpCode::STORE_MEMBER, p_program.members[index].span, int64_t(index));
 	}

@@ -15,3 +15,7 @@ func compute(input: int) -> int:
 
 func language_version() -> String:
 	return mocha_language_version()
+
+func detach_self() -> int:
+	set_script(null)
+	return 1

@@ -38,6 +38,9 @@ public:
 	static bool accepts(const Variant &p_value, const TypeRef &p_type, Variant &r_converted) {
 		return convert_value(p_value, p_type, r_converted);
 	}
+	// A script instance reached through a host `callp` reports a nested VM failure
+	// here so the outer VM frame cannot mistake its nil result for success.
+	static void publish_nested_failure(const RuntimeFailure &p_failure);
 };
 
 } // namespace mocha_script

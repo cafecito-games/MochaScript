@@ -37,6 +37,8 @@ public:
 	Object *owner = nullptr;
 	Ref<MochaScript> script;
 	Vector<Variant> members;
+	int active_calls = 0;
+	bool free_requested = false;
 
 	MochaScriptInstance() = default;
 	~MochaScriptInstance();

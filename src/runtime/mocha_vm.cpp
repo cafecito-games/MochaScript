@@ -18,6 +18,8 @@ namespace {
 thread_local int vm_entry_count = 0;
 thread_local int vm_frame_depth = 0;
 thread_local int64_t vm_operations_remaining = 0;
+thread_local bool vm_nested_failure_pending = false;
+thread_local RuntimeFailure vm_nested_failure;
 
 struct VMEntry {
 	bool root = false;
@@ -26,6 +28,7 @@ struct VMEntry {
 		if (root) {
 			vm_frame_depth = 0;
 			vm_operations_remaining = 1000000;
+			vm_nested_failure_pending = false;
 		}
 	}
 	~VMEntry() { vm_entry_count--; }
@@ -41,6 +44,26 @@ void fail(RuntimeFailure &r_failure, const SourceSpan &p_span, const String &p_m
 	r_failure.code = "M4001";
 	r_failure.message = p_message;
 	r_failure.span = p_span;
+}
+
+Variant runtime_default(const TypeRef &p_type) {
+	switch (p_type.kind) {
+		case TypeKind::BOOL: return false;
+		case TypeKind::INT: return int64_t(0);
+		case TypeKind::FLOAT: return 0.0;
+		case TypeKind::STRING: return String();
+		case TypeKind::ARRAY: return Array();
+		case TypeKind::DICTIONARY: return Dictionary();
+		default: return Variant();
+	}
+}
+
+bool consume_nested_failure(RuntimeFailure &r_failure) {
+	if (!vm_nested_failure_pending) return false;
+	r_failure = vm_nested_failure;
+	vm_nested_failure_pending = false;
+	vm_nested_failure = {};
+	return true;
 }
 
 } // namespace
@@ -139,6 +162,7 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 		int p_argument_count, GDExtensionCallError &r_call_error,
 		RuntimeFailure &r_failure) {
 	r_call_error.error = GDEXTENSION_CALL_OK;
+	const uint64_t owner_id = p_owner != nullptr ? p_owner->get_instance_id() : 0;
 	VMFrame frame;
 	if (!frame.valid) {
 		r_call_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
@@ -352,6 +376,15 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				} else {
 					receiver.callp(instruction.name, pointers.data(), int(pointers.size()), result, nested_error);
 				}
+				if (consume_nested_failure(r_failure)) {
+					r_call_error.error = GDEXTENSION_CALL_ERROR_INVALID_ARGUMENT;
+					return {};
+				}
+				if (owner_id != 0 && ObjectDB::get_instance(owner_id) != p_owner) {
+					fail(r_failure, instruction.span, "The MochaScript owner was freed during a host call.");
+					r_call_error.error = GDEXTENSION_CALL_ERROR_INSTANCE_IS_NULL;
+					return {};
+				}
 				if (nested_error.error != GDEXTENSION_CALL_OK || !r_failure.message.is_empty()) {
 					r_call_error = nested_error;
 					if (r_call_error.error == GDEXTENSION_CALL_OK) r_call_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
@@ -391,6 +424,9 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 Error MochaVM::initialize(const CompiledModule &p_module, Object *p_owner,
 		Vector<Variant> &r_members, RuntimeFailure &r_failure) {
 	r_members.resize(int64_t(p_module.members.size()));
+	for (size_t index = 0; index < p_module.members.size(); ++index) {
+		r_members.write[int64_t(index)] = runtime_default(p_module.members[index].type);
+	}
 	GDExtensionCallError error;
 	error.error = GDEXTENSION_CALL_OK;
 	VMEntry entry;
@@ -406,9 +442,16 @@ Variant MochaVM::call(const CompiledModule &p_module, const CompiledFunction &p_
 	VMEntry entry;
 	Variant result = execute(p_module, p_function, p_owner, r_members, p_arguments, p_argument_count, r_call_error, r_failure);
 	if (!r_failure.message.is_empty() && r_call_error.error == GDEXTENSION_CALL_OK) {
-		r_call_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
+		r_call_error.error = GDEXTENSION_CALL_ERROR_INVALID_ARGUMENT;
+		r_call_error.argument = -1;
 	}
 	return result;
+}
+
+void MochaVM::publish_nested_failure(const RuntimeFailure &p_failure) {
+	if (vm_entry_count <= 0 || p_failure.message.is_empty()) return;
+	vm_nested_failure = p_failure;
+	vm_nested_failure_pending = true;
 }
 
 } // namespace mocha_script

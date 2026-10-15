@@ -247,7 +247,11 @@ GDExtensionScriptLanguagePtr instance_get_language(GDExtensionScriptInstanceData
 void instance_free(GDExtensionScriptInstanceDataPtr p_instance) {
 	MochaScriptInstance *instance = instance_of(p_instance);
 	if (instance != nullptr) {
-		memdelete(instance);
+		if (instance->active_calls > 0) {
+			instance->free_requested = true;
+		} else {
+			memdelete(instance);
+		}
 	}
 }
 
@@ -358,6 +362,14 @@ bool MochaScriptInstance::has_method(const StringName &p_name) const {
 }
 
 Variant MochaScriptInstance::call(const StringName &p_method, const Variant **p_arguments, int p_argument_count, GDExtensionCallError &r_error) {
+	struct ActiveCall {
+		MochaScriptInstance *instance;
+		explicit ActiveCall(MochaScriptInstance *p_instance) : instance(p_instance) { instance->active_calls++; }
+		~ActiveCall() {
+			instance->active_calls--;
+			if (instance->active_calls == 0 && instance->free_requested) memdelete(instance);
+		}
+	} active(this);
 	r_error.error = GDEXTENSION_CALL_OK;
 	if (script.is_null()) {
 		r_error.error = GDEXTENSION_CALL_ERROR_INSTANCE_IS_NULL;
@@ -379,6 +391,11 @@ Variant MochaScriptInstance::call(const StringName &p_method, const Variant **p_
 	if (!failure.message.is_empty()) {
 		UtilityFunctions::push_error(vformat("%s:%d:%d: %s: %s", script->get_path(), failure.span.line,
 				failure.span.column, failure.code, failure.message));
+		MochaVM::publish_nested_failure(failure);
+		// INVALID_METHOD makes Object::callp fall through to a same-named native
+		// method. The Mocha method existed and already reported its runtime error,
+		// so return nil as a handled call instead.
+		r_error.error = GDEXTENSION_CALL_OK;
 	}
 	return result;
 }
@@ -399,7 +416,15 @@ void MochaScriptInstance::notification(int p_what, bool p_reversed) {
 	const Variant reversed = p_reversed;
 	const Variant *arguments[2] = { &what, &reversed };
 	GDExtensionCallError error;
-	call(notification_name, arguments, function->parameter_types.size() >= 2 ? 2 : 1, error);
+	const int argument_count = int(function->parameter_types.size());
+	if (argument_count < 1 || argument_count > 2) {
+		UtilityFunctions::push_error(vformat("%s: _notification must declare one or two parameters.", script->get_path()));
+		return;
+	}
+	call(notification_name, arguments, argument_count, error);
+	if (error.error != GDEXTENSION_CALL_OK) {
+		UtilityFunctions::push_error(vformat("%s: _notification call failed.", script->get_path()));
+	}
 }
 
 } // namespace mocha_script

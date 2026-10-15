@@ -21,6 +21,34 @@
 
 namespace mocha_script {
 
+namespace {
+
+godot::Variant::Type carrier_for_type(const TypeRef &p_type) {
+	switch (p_type.kind) {
+		case TypeKind::BOOL: return godot::Variant::BOOL;
+		case TypeKind::INT: return godot::Variant::INT;
+		case TypeKind::FLOAT: return godot::Variant::FLOAT;
+		case TypeKind::STRING: return godot::Variant::STRING;
+		case TypeKind::ARRAY: return godot::Variant::ARRAY;
+		case TypeKind::DICTIONARY: return godot::Variant::DICTIONARY;
+		case TypeKind::OBJECT: return godot::Variant::OBJECT;
+		default: return godot::Variant::NIL;
+	}
+}
+
+godot::Dictionary method_value_info(const godot::StringName &p_name, const TypeRef &p_type) {
+	godot::Dictionary info;
+	info["name"] = p_name;
+	info["type"] = int64_t(carrier_for_type(p_type));
+	info["class_name"] = p_type.kind == TypeKind::OBJECT ? p_type.name : godot::StringName();
+	info["hint"] = int64_t(godot::PROPERTY_HINT_NONE);
+	info["hint_string"] = godot::String();
+	info["usage"] = int64_t(p_type.kind == TypeKind::ANY ? godot::PROPERTY_USAGE_NIL_IS_VARIANT : godot::PROPERTY_USAGE_DEFAULT);
+	return info;
+}
+
+} // namespace
+
 void MochaScript::_bind_methods() {
 	godot::ClassDB::bind_method(godot::D_METHOD("get_token_count"), &MochaScript::get_token_count);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_diagnostics"), &MochaScript::get_diagnostics);
@@ -47,17 +75,7 @@ const TypeRef *MochaScript::get_member_type(int64_t p_index) const {
 }
 godot::Variant::Type MochaScript::get_member_carrier(int64_t p_index) const {
 	const TypeRef *type = get_member_type(p_index);
-	if (type == nullptr) return godot::Variant::NIL;
-	switch (type->kind) {
-		case TypeKind::BOOL: return godot::Variant::BOOL;
-		case TypeKind::INT: return godot::Variant::INT;
-		case TypeKind::FLOAT: return godot::Variant::FLOAT;
-		case TypeKind::STRING: return godot::Variant::STRING;
-		case TypeKind::ARRAY: return godot::Variant::ARRAY;
-		case TypeKind::DICTIONARY: return godot::Variant::DICTIONARY;
-		case TypeKind::OBJECT: return godot::Variant::OBJECT;
-		default: return godot::Variant::NIL;
-	}
+	return type == nullptr ? godot::Variant::NIL : carrier_for_type(*type);
 }
 void MochaScript::collect_method_signatures(godot::Vector<godot::StringName> &r_names, godot::Vector<int> &r_argument_counts) const {
 	if (!compiled_module) return;
@@ -109,6 +127,19 @@ void *MochaScript::_placeholder_instance_create(godot::Object *p_for_object) con
 bool MochaScript::_has_source_code() const { return true; }
 godot::String MochaScript::_get_source_code() const { return source_code; }
 void MochaScript::_set_source_code(const godot::String &p_code) {
+	if (!instances.is_empty() && p_code != source_code) {
+		diagnostics.clear();
+		godot::Dictionary diagnostic;
+		diagnostic["code"] = "M0003";
+		diagnostic["message"] = "Source replacement is refused while a MochaScript instance is alive.";
+		diagnostic["path"] = get_path().is_empty() ? godot::String("<memory>") : get_path();
+		diagnostic["line"] = 1;
+		diagnostic["column"] = 1;
+		diagnostic["end_line"] = 1;
+		diagnostic["end_column"] = 1;
+		diagnostics.push_back(diagnostic);
+		return;
+	}
 	source_code = p_code;
 	token_count = 0;
 	diagnostics.clear();
@@ -202,7 +233,12 @@ godot::Dictionary MochaScript::_get_method_info(const godot::StringName &p_metho
 	const CompiledFunction *function = find_function(p_method);
 	if (function) {
 		info["name"] = p_method;
-		info["args"] = godot::Array();
+		godot::Array arguments;
+		for (size_t index = 0; index < function->parameter_names.size(); ++index) {
+			arguments.push_back(method_value_info(function->parameter_names[index], function->parameter_types[index]));
+		}
+		info["args"] = arguments;
+		info["return"] = method_value_info(godot::StringName(), function->return_type);
 		info["default_args"] = godot::Array();
 		info["flags"] = int64_t(godot::METHOD_FLAG_NORMAL);
 	}

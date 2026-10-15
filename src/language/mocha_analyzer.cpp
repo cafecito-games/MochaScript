@@ -69,7 +69,11 @@ bool MochaAnalyzer::assignable(const TypeRef &p_target, const TypeRef &p_value) 
 	return p_target.kind == p_value.kind;
 }
 
-void MochaAnalyzer::validate_type(const TypeRef &p_type, const SourceSpan &p_span, const String &p_context) {
+void MochaAnalyzer::validate_type(const TypeRef &p_type, const SourceSpan &p_span, const String &p_context, bool p_allow_void) {
+	if (p_type.kind == TypeKind::VOID && !p_allow_void) {
+		report(p_span, "M2026", vformat("Type 'void' is only valid as a function return type, not %s.", p_context));
+		return;
+	}
 	if (p_type.kind == TypeKind::OBJECT &&
 			(p_type.name.is_empty() || !ClassDB::class_exists(p_type.name))) {
 		report(p_span, "M2024", vformat("Unknown or unsupported object type '%s' %s.", String(p_type.name), p_context));
@@ -293,7 +297,11 @@ Error MochaAnalyzer::analyze(Program &p_program, const String &p_path) {
 	for (FunctionDecl &function : p_program.functions) {
 		Context context;
 		context.return_type = function.return_type;
-		validate_type(function.return_type, function.span, vformat("as the return type of '%s'", String(function.name)));
+		validate_type(function.return_type, function.span, vformat("as the return type of '%s'", String(function.name)), true);
+		if (function.name == StringName("_notification") &&
+				(function.parameters.size() < 1 || function.parameters.size() > 2)) {
+			report(function.span, "M2027", "_notification must declare one or two parameters.");
+		}
 		for (const Parameter &parameter : function.parameters) {
 			validate_type(parameter.type, parameter.span, vformat("for parameter '%s'", String(parameter.name)));
 			if (context.locals.has(parameter.name)) report(parameter.span, "M2023", vformat("Parameter '%s' is declared more than once.", String(parameter.name)));

@@ -7,9 +7,24 @@ func _initialize() -> void:
 	if script == null:
 		failures.append("example.mocha did not load")
 	else:
+		var compute_metadata: Dictionary = {}
+		for method in script.get_script_method_list():
+			if method.get("name") == &"compute":
+				compute_metadata = method
+				break
+		if compute_metadata.is_empty() or compute_metadata.get("args", []).size() != 1:
+			failures.append("script method metadata omitted compute's parameter")
+		elif compute_metadata.get("return", {}).get("type") != TYPE_INT:
+			failures.append("script method metadata omitted compute's int return")
 		var host := Node.new()
 		host.name = "MochaHost"
 		host.set_script(script)
+		var published_source := script.get_source_code()
+		script.set_source_code("extends Node\n")
+		if script.get_source_code() != published_source:
+			failures.append("source changed underneath a live MochaScript instance")
+		elif script.get_diagnostics().is_empty() or script.get_diagnostics()[0].get("code") != "M0003":
+			failures.append("live source replacement did not produce M0003")
 		if script.reload() != ERR_ALREADY_IN_USE:
 			failures.append("reload was not refused while a live MochaScript instance existed")
 		if host.get_script() != script:
@@ -24,6 +39,9 @@ func _initialize() -> void:
 				failures.append("compiled member store did not persist total = 42")
 			if host.call("language_version") != "MochaScript/bootstrap-1":
 				failures.append("Mocha-owned language evolution canary did not execute")
+			var detach_result: Variant = host.call("detach_self")
+			if detach_result != 1 or host.get_script() != null:
+				failures.append("script instance did not survive and complete a self-detach call safely")
 		host.free()
 
 	if failures.is_empty():
