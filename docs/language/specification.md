@@ -49,9 +49,11 @@ An external call with a wrong typed argument also preserves Godot's `INVALID_ARG
 index, and expected carrier while publishing the source-located Mocha failure. Failures inside a
 nested Mocha call remain script runtime failures rather than being misattributed to the host caller.
 Their originating script path and span are preserved; an engine-mediated propagation also records
-the first Mocha call site. Indirect dispatch through `Object.call` and `callv` cannot turn a nested
-failure into a successful `null` result, while unrelated engine callbacks on the same receiver do
-not abort the direct call that triggered them.
+the first Mocha call site. Indirect dispatch through `Object.call`/`callv` and through standard or
+bound `Callable.call`/`callv` cannot turn a nested failure into a successful `null` result, while
+unrelated engine callbacks on the same receiver do not abort the direct call that triggered them.
+Opaque custom callables have no stable target-method identity, so they run behind a non-capturing
+shield: their callee reports any failure, but it is not attributed to the outer Mocha call.
 
 Untyped declarations infer and retain the initializer's static carrier type, so `var value = 1`
 cannot later store a `String` (`M2013`); an explicit `: Variant` is never narrowed. Statically known

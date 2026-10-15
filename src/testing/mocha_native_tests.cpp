@@ -21,6 +21,7 @@
 #include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
+#include <godot_cpp/variant/callable_method_pointer.hpp>
 
 #include <limits>
 
@@ -74,6 +75,13 @@ bool MochaNativeTests::initializer_mismatch_probe() const {
 	return MochaVM::publish_nested_failure(failure, get_instance_id(), StringName());
 }
 
+bool MochaNativeTests::opaque_callable_probe() const {
+	RuntimeFailure failure;
+	failure.code = "M4001";
+	failure.message = "unrelated opaque callable callback";
+	return MochaVM::publish_nested_failure(failure, get_instance_id(), "unrelated_callback");
+}
+
 int64_t MochaNativeTests::get_shielded_value() const {
 	RuntimeFailure failure;
 	failure.code = "M4001";
@@ -105,8 +113,8 @@ godot::PackedStringArray MochaNativeTests::run() const {
 		if (!MochaVM::test_failure_capture_match(41, "set_script", StringName(), 41, StringName())) {
 			failures.push_back("vm: direct set_script capture rejected its initializer failure");
 		}
-		if (!MochaVM::test_failure_capture_match(41, StringName(), StringName(), 41, "opaque_target")) {
-			failures.push_back("vm: opaque Callable capture rejected its same-owner target failure");
+		if (MochaVM::test_failure_capture_match(41, StringName(), StringName(), 41, "opaque_target")) {
+			failures.push_back("vm: an unidentified dispatch accepted an arbitrary same-owner failure");
 		}
 	}
 
@@ -362,6 +370,8 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			"\treturn self.call(\"shield_in_reader\", self)\n"
 			"func callable_target_failure() -> Variant:\n"
 			"\treturn dynamic_modulo(\"%d\")\n"
+			"func bound_callable_target_failure(_value: Variant) -> Variant:\n"
+			"\treturn dynamic_modulo(\"%d\")\n"
 			"func callable_failure(callback: Variant) -> Variant:\n"
 			"\treturn callback.call()\n"
 			"func callable_failure_callv(callback: Variant) -> Variant:\n"
@@ -554,24 +564,32 @@ godot::PackedStringArray MochaNativeTests::run() const {
 									callable_arguments, 1, call_error, failure);
 							if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
 									failure.path != "res://native_nested_runtime.mocha" || !failure_at(failure, 58, 9) ||
-									!called_at(failure, "res://native_pipeline.mocha", 140, 9)) {
+									!called_at(failure, "res://native_pipeline.mocha", 142, 9)) {
 								failures.push_back("vm: Callable.call nested failure was treated as a successful nil result");
 							}
-							const godot::Variant bound_failing_callable = failing_callable_target.bindv(godot::Array());
+							godot::Callable bound_failing_callable_target(nested_owner.ptr(), "bound_callable_target_failure");
+							const godot::Variant bound_failing_callable = bound_failing_callable_target.bind(godot::Variant("bound"));
 							const godot::Variant *bound_callable_arguments[1] = { &bound_failing_callable };
 							MochaVM::call(*module, *module->find_function("callable_failure"), nested_owner.ptr(), nested_members,
 									bound_callable_arguments, 1, call_error, failure);
 							if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
 									failure.path != "res://native_nested_runtime.mocha" || !failure_at(failure, 58, 9) ||
-									!called_at(failure, "res://native_pipeline.mocha", 140, 9)) {
+									!called_at(failure, "res://native_pipeline.mocha", 142, 9)) {
 								failures.push_back("vm: bound Callable nested failure was treated as a successful nil result");
 							}
 							MochaVM::call(*module, *module->find_function("callable_failure_callv"), nested_owner.ptr(), nested_members,
 									callable_arguments, 1, call_error, failure);
 							if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
 									failure.path != "res://native_nested_runtime.mocha" || !failure_at(failure, 58, 9) ||
-									!called_at(failure, "res://native_pipeline.mocha", 142, 9)) {
+									!called_at(failure, "res://native_pipeline.mocha", 144, 9)) {
 								failures.push_back("vm: Callable.callv nested failure was treated as a successful nil result");
+							}
+							const godot::Variant opaque_callable = callable_mp(this, &MochaNativeTests::opaque_callable_probe);
+							const godot::Variant *opaque_callable_arguments[1] = { &opaque_callable };
+							result = MochaVM::call(*module, *module->find_function("callable_failure"), nested_owner.ptr(), nested_members,
+									opaque_callable_arguments, 1, call_error, failure);
+							if (call_error.error != GDEXTENSION_CALL_OK || !failure.message.is_empty() || result != godot::Variant(false)) {
+								failures.push_back("vm: opaque Callable allowed an unrelated callback to claim its dispatch");
 							}
 							godot::Ref<MochaScript> broken_initializer_script;
 							broken_initializer_script.instantiate();

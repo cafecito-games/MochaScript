@@ -561,17 +561,38 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				uint64_t receiver_id = receiver.get_type() == Variant::OBJECT ? uint64_t(ObjectID(receiver)) : 0;
 				StringName expected_method = instruction.name;
 				StringName alternate_method;
+				bool capture_host_failure = true;
 				const VMNames &names = vm_names();
 				if (receiver.get_type() == Variant::CALLABLE &&
 						(instruction.name == names.call || instruction.name == names.callv)) {
 					const Callable callable = receiver;
-					receiver_id = uint64_t(callable.get_object_id());
-					expected_method = callable.get_method();
+					const bool identifiable_target = callable.is_standard() ||
+							callable.get_bound_arguments_count() != 0 ||
+							callable.get_unbound_arguments_count() != 0;
+					if (identifiable_target) {
+						receiver_id = uint64_t(callable.get_object_id());
+						expected_method = callable.get_method();
+						capture_host_failure = !expected_method.is_empty();
+					} else {
+						// An opaque Callable has no stable method identity. Shield it so a
+						// reentrant callback on the same owner cannot claim this dispatch.
+						capture_host_failure = false;
+					}
 				} else if ((instruction.name == names.call || instruction.name == names.callv) &&
 						!values.empty() && (values[0].get_type() == Variant::STRING ||
 								values[0].get_type() == Variant::STRING_NAME)) {
 					alternate_method = StringName(values[0]);
 				}
+				auto invoke_host_call = [&]() {
+					if (capture_host_failure) {
+						NestedFailureCaptureScope capture(receiver_id, expected_method, alternate_method);
+						receiver.callp(instruction.name, pointers.data(), int(pointers.size()), result, nested_error);
+						nested_failure = capture.failure();
+					} else {
+						MochaNestedFailureShield shield;
+						receiver.callp(instruction.name, pointers.data(), int(pointers.size()), result, nested_error);
+					}
+				};
 				if (instruction.opcode == OpCode::CALL_SELF) {
 					if (instruction.name == names.language_version) {
 						if (!pointers.empty()) {
@@ -583,14 +604,10 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 					} else if (const CompiledFunction *callee = p_module.find_function(instruction.name)) {
 						result = execute(p_module, *callee, p_owner, r_members, pointers.data(), int(pointers.size()), nested_error, r_failure, instruction.span, false);
 					} else {
-						NestedFailureCaptureScope capture(receiver_id, expected_method, alternate_method);
-						receiver.callp(instruction.name, pointers.data(), int(pointers.size()), result, nested_error);
-						nested_failure = capture.failure();
+						invoke_host_call();
 					}
 				} else {
-					NestedFailureCaptureScope capture(receiver_id, expected_method, alternate_method);
-					receiver.callp(instruction.name, pointers.data(), int(pointers.size()), result, nested_error);
-					nested_failure = capture.failure();
+					invoke_host_call();
 				}
 				if (take_nested_failure(nested_failure, p_module.path, instruction.span, r_failure)) {
 					r_call_error.error = GDEXTENSION_CALL_ERROR_INVALID_ARGUMENT;
@@ -690,10 +707,7 @@ bool MochaVM::publish_nested_failure(const RuntimeFailure &p_failure, uint64_t p
 	if (p_method.is_empty()) {
 		method_matches = expected_method == vm_names().set_script || alternate_method == vm_names().set_script;
 	} else {
-		// Custom callables (including bound callables) can retain their target
-		// object while intentionally hiding the target method. In that case the
-		// synchronous owner match is the strongest dispatch identity available.
-		method_matches = expected_method.is_empty() || expected_method == p_method ||
+		method_matches = expected_method == p_method ||
 				(!alternate_method.is_empty() && alternate_method == p_method);
 	}
 	if (capture.owner_id != p_owner_id || !capture.failure->message.is_empty() || !method_matches) return false;
