@@ -220,14 +220,10 @@ void instance_notification(GDExtensionScriptInstanceDataPtr p_instance, int32_t 
 	}
 }
 
-void instance_to_string(GDExtensionScriptInstanceDataPtr p_instance, GDExtensionBool *r_is_valid, GDExtensionStringPtr r_out) {
-	MochaScriptInstance *instance = instance_of(p_instance);
-	if (instance == nullptr || instance->script.is_null()) {
-		*r_is_valid = false;
-		return;
-	}
-	*reinterpret_cast<String *>(r_out) = vformat("[MochaScript:%s]", instance->script->get_path());
-	*r_is_valid = true;
+void instance_to_string(GDExtensionScriptInstanceDataPtr, GDExtensionBool *r_is_valid, GDExtensionStringPtr) {
+	// Until MochaScript supports a user `_to_string`, defer to Godot's native
+	// Object/Node representation so identity and node names are preserved.
+	*r_is_valid = false;
 }
 
 void instance_refcount_incremented(GDExtensionScriptInstanceDataPtr) {}

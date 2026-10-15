@@ -123,6 +123,10 @@ bool MochaParser::consume_identifier(StringName &r_name, const String &p_context
 		error_at(peek(), "M1013", vformat("Built-in constant '%s' cannot be declared as a name.", token_text(peek())));
 		return false;
 	}
+	if (peek().type == Token::MATCH || peek().type == Token::WHEN) {
+		error_at(peek(), "M1014", vformat("Contextual keyword '%s' cannot be declared as a name.", token_text(peek())));
+		return false;
+	}
 	if (!peek().is_identifier()) {
 		error_at(peek(), "M1003", vformat("Expected an identifier %s.", p_context));
 		return false;
@@ -284,24 +288,29 @@ StmtPtr MochaParser::parse_variable_statement() {
 }
 
 StmtPtr MochaParser::parse_if_statement() {
-	if (++statement_depth > MAX_STATEMENT_DEPTH) {
-		statement_depth--;
-		error_at(peek(), "M1010", vformat("Conditional nesting exceeds the limit of %d.", MAX_STATEMENT_DEPTH));
-		synchronize_line();
-		return {};
-	}
-	StatementDepthScope depth_scope{ statement_depth };
 	const Token start = previous();
 	auto result = statement(StatementKind::IF, span_from_token(start));
 	result->expression = parse_expression();
 	consume(Token::COLON, "Expected ':' after the if condition.");
 	result->body = parse_suite();
+	StmtPtr tail = result;
+	int branch_count = 0;
+	while (match(Token::ELIF)) {
+		if (++branch_count > MAX_STATEMENT_DEPTH) {
+			error_at(previous(), "M1010", vformat("Conditional branch count exceeds the limit of %d.", MAX_STATEMENT_DEPTH));
+			synchronize_line();
+			break;
+		}
+		auto branch = statement(StatementKind::IF, span_from_token(previous()));
+		branch->expression = parse_expression();
+		consume(Token::COLON, "Expected ':' after the elif condition.");
+		branch->body = parse_suite();
+		tail->else_body.push_back(branch);
+		tail = branch;
+	}
 	if (match(Token::ELSE)) {
 		consume(Token::COLON, "Expected ':' after 'else'.");
-		result->else_body = parse_suite();
-	} else if (match(Token::ELIF)) {
-		StmtPtr nested = parse_if_statement();
-		if (nested) result->else_body.push_back(nested);
+		tail->else_body = parse_suite();
 	}
 	return result;
 }
@@ -412,8 +421,8 @@ ExprPtr MochaParser::parse_expression(int p_min_precedence) {
 		const int combined_depth = MAX(left->tree_depth, right->tree_depth) + 1;
 		if (combined_depth > MAX_EXPRESSION_DEPTH) {
 			error_at(operation, "M1009", vformat("Expression tree exceeds the limit of %d.", MAX_EXPRESSION_DEPTH));
-			synchronize_line();
-			return left;
+			while (!at_end() && !check(Token::NEWLINE) && !check(Token::DEDENT)) advance();
+			return {};
 		}
 		auto combined = expression(ExprKind::BINARY, merge_span(left->span, right->span));
 		combined->tree_depth = combined_depth;

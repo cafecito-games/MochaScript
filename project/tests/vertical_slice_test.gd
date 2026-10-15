@@ -32,6 +32,8 @@ func _initialize() -> void:
 		elif not host.has_method("compute"):
 			failures.append("compiled compute method is not visible through Godot")
 		else:
+			if not str(host).contains("MochaHost"):
+				failures.append("script instance replaced the host's native string representation")
 			var instance_compute_metadata: Dictionary = {}
 			for method in host.get_method_list():
 				if method.get("name") == &"compute":

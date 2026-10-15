@@ -22,7 +22,8 @@ Local variables, assignment and arithmetic compound assignment, `if`/`elif`/`els
 indexing, member reads, calls, unary operators, arithmetic, comparison, logical, containment, and
 bitwise operators. `self` names the host object. `PI`, `TAU`, `INF`, and `NAN` are built-in numeric
 constants.
-The constant names are reserved and cannot be redeclared (`M1013`).
+The constant names are reserved and cannot be redeclared (`M1013`); the contextual keywords
+`match` and `when` are likewise reserved as declaration names (`M1014`).
 
 Calls to another Mocha method execute in the Mocha VM. An unresolved unqualified call targets the
 host Godot object through public `Variant::callp`; an explicit receiver calls that public object's

@@ -250,6 +250,18 @@ godot::PackedStringArray MochaNativeTests::run() const {
 	}
 
 	{
+		for (const godot::String &keyword : { godot::String("match"), godot::String("when") }) {
+			Program invalid;
+			MochaParser parser;
+			const godot::String source = "func bad(" + keyword + ": Variant) -> Variant:\n\treturn " + keyword + "\n";
+			if (parser.parse(source, "res://native_reserved_keyword.mocha", invalid) != godot::ERR_PARSE_ERROR ||
+					parser.get_diagnostics().empty() || parser.get_diagnostics()[0].code != "M1014") {
+				failures.push_back("parser: contextual keyword '" + keyword + "' did not produce M1014");
+			}
+		}
+	}
+
+	{
 		const godot::String collection_types =
 				"var values: Array[int]\n"
 				"var lookup: Dictionary[String, int]\n";
@@ -343,8 +355,13 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			failures.push_back("parser: excessively deep flat expression tree was accepted");
 		} else {
 			bool found = false;
-			for (const Diagnostic &diagnostic : parser.get_diagnostics()) found |= diagnostic.code == "M1009";
+			bool spurious_line_end = false;
+			for (const Diagnostic &diagnostic : parser.get_diagnostics()) {
+				found |= diagnostic.code == "M1009";
+				spurious_line_end |= diagnostic.code == "M1002";
+			}
 			if (!found) failures.push_back("parser: flat expression tree did not produce M1009");
+			if (spurious_line_end) failures.push_back("parser: flat expression recovery produced a spurious M1002");
 		}
 	}
 
@@ -386,7 +403,7 @@ godot::PackedStringArray MochaNativeTests::run() const {
 	{
 		godot::String source = "func too_nested() -> void:\n";
 		godot::String indent = "\t";
-		for (int i = 0; i < 140; ++i) {
+		for (int i = 0; i < 300; ++i) {
 			source += indent + "if true:\n";
 			indent += "\t";
 		}
@@ -417,23 +434,28 @@ godot::PackedStringArray MochaNativeTests::run() const {
 	}
 
 	{
-		const godot::String invalid_operators =
-				"func bad_modulo() -> Variant:\n\treturn 1.0 % 1.0\n"
-				"func bad_shift() -> Variant:\n\treturn 1.0 << 1\n"
-				"func bad_order() -> bool:\n\treturn \"a\" < 1\n"
-				"func bad_equality() -> bool:\n\treturn 1 == \"1\"\n"
-				"func bad_membership() -> bool:\n\treturn 1 in 2\n"
-				"func bad_string_membership() -> bool:\n\treturn 1 in \"abc\"\n"
-				"func bad_negation() -> Variant:\n\treturn ~1.0\n"
-				"func bad_compound() -> void:\n\tvar text: String = \"a\"\n\ttext -= \"b\"\n";
-		Program invalid;
-		MochaParser parser;
-		if (parser.parse(invalid_operators, "res://native_invalid_operators.mocha", invalid) != godot::OK) {
-			failures.push_back("analyzer: invalid-operator fixture failed before analysis");
-		} else {
+		struct InvalidOperatorCase { const char *source; const char *code; const char *label; };
+		const InvalidOperatorCase cases[] = {
+			{ "func bad() -> Variant:\n\treturn 1.0 % 1.0\n", "M2003", "float modulo" },
+			{ "func bad() -> Variant:\n\treturn 1.0 << 1\n", "M2003", "float shift" },
+			{ "func bad() -> bool:\n\treturn \"a\" < 1\n", "M2003", "mixed ordering" },
+			{ "func bad() -> bool:\n\treturn 1 == \"1\"\n", "M2003", "mixed equality" },
+			{ "func bad() -> bool:\n\treturn 1 in 2\n", "M2003", "numeric membership" },
+			{ "func bad() -> bool:\n\treturn 1 in \"abc\"\n", "M2003", "non-string String membership" },
+			{ "func bad() -> Variant:\n\treturn ~1.0\n", "M2002", "float bitwise negation" },
+			{ "func bad() -> void:\n\tvar text: String = \"a\"\n\ttext -= \"b\"\n", "M2003", "invalid compound operation" },
+		};
+		for (const InvalidOperatorCase &test_case : cases) {
+			Program invalid;
+			MochaParser parser;
+			if (parser.parse(test_case.source, "res://native_invalid_operator.mocha", invalid) != godot::OK) {
+				failures.push_back(godot::String("analyzer: ") + test_case.label + " failed before analysis");
+				continue;
+			}
 			MochaAnalyzer analyzer;
-			if (analyzer.analyze(invalid, "res://native_invalid_operators.mocha") != godot::ERR_COMPILATION_FAILED) {
-				failures.push_back("analyzer: statically invalid operators were accepted");
+			if (analyzer.analyze(invalid, "res://native_invalid_operator.mocha") != godot::ERR_COMPILATION_FAILED ||
+					analyzer.get_diagnostics().size() != 1 || analyzer.get_diagnostics()[0].code != test_case.code) {
+				failures.push_back(godot::String("analyzer: ") + test_case.label + " did not produce only " + test_case.code);
 			}
 		}
 	}
