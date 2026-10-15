@@ -11,6 +11,7 @@ import argparse
 import difflib
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from datetime import date
@@ -131,12 +132,6 @@ def transformed_component(custom_godot: Path, component: str, lock: dict) -> dic
 
 def initial_import(custom_godot: Path, component: str, lock: dict) -> None:
     generated = transformed_component(custom_godot, component, lock)
-    collisions = [relative for relative in generated if (ROOT / relative).exists()]
-    if collisions:
-        raise SystemExit(
-            "refusing to overwrite Mocha-owned files:\n  " + "\n  ".join(collisions)
-        )
-
     provenance = {
         "schema": 1,
         "policy": "create-only; future upstream changes are review inputs",
@@ -151,11 +146,14 @@ def initial_import(custom_godot: Path, component: str, lock: dict) -> None:
             raise SystemExit("existing provenance belongs to a different Godot commit")
         if provenance.get("transform_version") != lock["imports"]["transform_version"]:
             raise SystemExit("existing provenance uses a different transform version")
+    if component in provenance.get("components", {}):
+        raise SystemExit(f"component {component!r} already has immutable import provenance")
 
-    for relative, contents in generated.items():
-        destination = ROOT / relative
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(contents, encoding="utf-8")
+    collisions = [relative for relative in generated if (ROOT / relative).exists()]
+    if collisions:
+        raise SystemExit(
+            "refusing to overwrite Mocha-owned files:\n  " + "\n  ".join(collisions)
+        )
 
     provenance["components"][component] = [
         {
@@ -167,7 +165,35 @@ def initial_import(custom_godot: Path, component: str, lock: dict) -> None:
         for source, destination in COMPONENTS[component].items()
     ]
     PROVENANCE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    PROVENANCE_PATH.write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
+    staged: list[tuple[Path, Path]] = []
+    promoted: list[Path] = []
+    provenance_temp = PROVENANCE_PATH.with_name(f".{PROVENANCE_PATH.name}.{os.getpid()}.tmp")
+    try:
+        for relative, contents in generated.items():
+            destination = ROOT / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            temporary = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
+            descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+            staged.append((temporary, destination))
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                stream.write(contents)
+
+        for temporary, destination in staged:
+            os.link(temporary, destination)
+            promoted.append(destination)
+
+        descriptor = os.open(provenance_temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            stream.write(json.dumps(provenance, indent=2) + "\n")
+        os.replace(provenance_temp, PROVENANCE_PATH)
+    except BaseException:
+        for destination in reversed(promoted):
+            destination.unlink(missing_ok=True)
+        raise
+    finally:
+        provenance_temp.unlink(missing_ok=True)
+        for temporary, _destination in staged:
+            temporary.unlink(missing_ok=True)
 
 
 def review(custom_godot: Path, component: str, lock: dict, output: Path | None) -> int:

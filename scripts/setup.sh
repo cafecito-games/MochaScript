@@ -30,6 +30,14 @@ actual_cpp = subprocess.run(
 ).stdout.strip()
 if actual_cpp != expected_cpp:
     raise SystemExit(f"godot-cpp mismatch: expected {expected_cpp}, got {actual_cpp}")
+cpp_status = subprocess.run(
+    ["git", "-C", str(root / "godot-cpp"), "status", "--porcelain", "--untracked-files=no"],
+    check=True,
+    text=True,
+    stdout=subprocess.PIPE,
+).stdout.strip()
+if cpp_status:
+    raise SystemExit(f"godot-cpp has tracked local modifications:\n{cpp_status}")
 
 api = root / "api" / "extension_api.json"
 actual_api = hashlib.sha256(api.read_bytes()).hexdigest()
