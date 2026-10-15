@@ -21,8 +21,11 @@ Prerequisites are Git, Python 3, SCons, and the pinned Cafecito Godot binary on 
 ```
 
 `verify.sh` derives the real CPU quota from cgroup v2, caps the memory-heavy binding build at four
-jobs, validates all immutable pins, builds the extension, imports the fixture project headlessly,
-and requires every layer-specific sentinel plus the final `MOCHA_VERIFY_OK` result.
+jobs, verifies the build-tool version, godot-cpp checkout, extension API, and installed runtime
+binary pins, builds the extension, imports the fixture project headlessly, and requires every
+layer-specific sentinel plus the final `MOCHA_VERIFY_OK` result. `materialize_upstream.sh` verifies
+the custom-Godot/Godot source and import pins; Linux CI additionally verifies the downloaded SCons
+wheel and editor archive hashes.
 
 The fixture covers typed members, locals and functions, arrays, dictionaries, indexing, calls,
 conditionals, state mutation, and interaction with a Godot `Node`. Negative fixtures assert stable

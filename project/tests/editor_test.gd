@@ -30,6 +30,9 @@ func _initialize() -> void:
 			failures.append("editor did not attach the MochaScript placeholder")
 		elif not script.is_placeholder_instance(host):
 			failures.append("editor attachment has no MochaScript placeholder instance")
+		var other_script := ResourceLoader.load("res://example.mocha", "", ResourceLoader.CACHE_MODE_IGNORE) as MochaScript
+		if other_script == null or other_script.instance_has(host):
+			failures.append("a different MochaScript treated the editor placeholder as its runtime instance")
 		if host.get(&"total") == 1:
 			failures.append("editor attachment ran the MochaScript member initializer")
 		host.free()
@@ -118,10 +121,10 @@ func _initialize() -> void:
 			var alias_absolute := ProjectSettings.globalize_path(alias_parent)
 			if real_dir.create_link("target.mocha", relative_link_absolute) != OK or fixture_root.create_link(ProjectSettings.globalize_path(real_parent), alias_absolute) != OK:
 				failures.append("editor could not establish the relative-link save fixture")
-			elif ResourceSaver.save(unsaved, alias_parent.path_join("link.mocha")) != ERR_CANT_RESOLVE:
-				failures.append("editor saver did not reject a relative link beneath a symlinked parent")
-			elif FileAccess.get_file_as_string(relative_target).contains("return 9"):
-				failures.append("rejected relative-link save still modified the real target")
+			elif ResourceSaver.save(unsaved, alias_parent.path_join("link.mocha")) != OK:
+				failures.append("editor saver could not follow a safe relative link beneath a symlinked parent")
+			elif not FileAccess.get_file_as_string(relative_target).contains("return 9"):
+				failures.append("safe relative-link save did not modify the real target")
 
 	var traversal_root := "user://mocha_editor_traversal"
 	var traversal_elsewhere := "user://mocha_editor_traversal_elsewhere"

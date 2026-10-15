@@ -329,6 +329,8 @@ godot::Variant MochaScript::_get_rpc_config() const { return godot::Dictionary()
 bool MochaScript::_instance_has(godot::Object *p_object) const {
 	MochaScriptLanguage *language = MochaScriptLanguage::get_singleton();
 	if (p_object == nullptr || language == nullptr) return false;
+	const godot::Variant attached_script = p_object->get_script();
+	if (attached_script.get_type() != godot::Variant::OBJECT || attached_script.get_validated_object() != this) return false;
 	std::lock_guard<std::mutex> lock(instances_mutex);
 	const uint64_t owner_id = p_object->get_instance_id();
 	for (const auto &entry : placeholder_instances) {

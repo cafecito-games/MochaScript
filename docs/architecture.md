@@ -46,8 +46,8 @@ executable after its explicit reload. Replacing cached source while a runtime in
 fails with `ERR_ALREADY_IN_USE` and preserves the old source and executable module.
 `MochaScriptResourceSaver` persists source through Godot's `ResourceSaver`, so editor-created and
 editor-modified `.mocha` resources use the same load/compile path after saving. It preserves safe
-symlink targets and permissions; ambiguous link targets containing parent traversal, or relative
-targets beneath symlinked directories, fail with `ERR_CANT_RESOLVE` without modifying either path.
+symlink targets and permissions; ambiguous link targets containing parent traversal fail with
+`ERR_CANT_RESOLVE` without modifying either possible path.
 
 Each attached object receives a `MochaScriptInstance` containing its own member vector and a strong
 reference to the script. Godot reaches it through `GDExtensionScriptInstanceInfo3`; startup refuses
