@@ -21,9 +21,13 @@ only when an entry or a MochaScript specification test says it is.
 | language identity | intentional divergence | Godot reports `MochaScript`, never `GDScript`. | recognition test |
 | tokenizer and grammar | inherited subset | The pinned tokenizer plus the specified executable grammar are Mocha-owned. | native tests and pinned corpus |
 | exponentiation precedence | inherited | `**` is left-associative; signed literals and explicit unary operators retain the pinned tokenizer/parser behavior. | native precedence tests |
-| static analysis | inherited subset | Typed declarations and operations in the bootstrap specification are checked. | native and negative fixtures |
+| inferred declarations | intentional divergence | An untyped non-null initializer fixes the declaration's carrier type; later incompatible stores are `M2013`. | native analyzer test and pinned negative fixture |
+| truthiness | intentional divergence | Conditions and logical operators require `bool`; arbitrary values are not truthy. | native analyzer tests |
+| percent operator | intentional divergence | `%` is integer modulo only; String formatting is rejected with `M2003`. | native analyzer test |
+| remaining static analysis | inherited subset | Declared types and the operations in the bootstrap specification are checked. | native and negative fixtures |
 | compiler and runtime | intentional ownership | Mocha bytecode and VM execute scripts; GDScript is never called. | vertical slice |
 | diagnostics | intentional divergence | Stable `M0xxx`–`M4xxx` records include source locations. | negative fixtures |
+| global utility functions | unsupported | Unqualified unresolved calls target the host object; GDScript globals such as `print` are not resolved. | architecture boundary and corpus classification |
 | language version intrinsic | intentional divergence | `mocha_language_version()` returns Mocha bootstrap metadata. | vertical slice canary |
 | GDScript interoperability | unsupported | One Godot object has one script instance; Mocha does not inherit from or delegate to GDScript. | architecture boundary and instance test |
 

@@ -158,10 +158,21 @@ TypeRef MochaParser::parse_type() {
 	else if (name == "Dictionary") result = TypeRef::make(TypeKind::DICTIONARY, name);
 	else result = TypeRef::make(TypeKind::OBJECT, name);
 
-	// Generic element types are parsed now and retained as an explicitly unsupported
-	// precision boundary rather than being mistaken for separate expressions.
+	// Collection parameters are parsed so their syntax has a stable boundary. The
+	// bootstrap TypeRef deliberately erases them until element checking is added.
 	if (match(Token::BRACKET_OPEN)) {
+		const Token bracket = previous();
+		if (name != "Array" && name != "Dictionary") {
+			error_at(bracket, "M1012", vformat("Type '%s' does not accept element parameters.", name));
+		}
 		parse_type();
+		if (name == "Dictionary") {
+			consume(Token::COMMA, "Expected ',' between Dictionary key and value types.");
+			parse_type();
+		} else if (match(Token::COMMA)) {
+			error_at(previous(), "M1012", "Array accepts exactly one element type.");
+			parse_type();
+		}
 		consume(Token::BRACKET_CLOSE, "Expected ']' after the collection element type.");
 	}
 	return result;
@@ -319,7 +330,8 @@ StmtPtr MochaParser::parse_statement() {
 		consume_line_end();
 		return result;
 	}
-	if (match(Token::FOR) || match(Token::MATCH) || match(Token::AWAIT) || match(Token::YIELD)) {
+	if (match(Token::FOR) || match(Token::MATCH) || match(Token::AWAIT) || match(Token::YIELD) ||
+			match(Token::BREAK) || match(Token::CONTINUE) || match(Token::ASSERT) || match(Token::BREAKPOINT)) {
 		error_at(previous(), "M1090", vformat("'%s' is recognized but not supported by this MochaScript bootstrap.", token_text(previous())));
 		return {};
 	}

@@ -15,7 +15,8 @@ imports the fixture project, and runs these isolated sentinels exactly once:
 - `MOCHA_EXECUTION_OK`: compile, instantiate, host-object interaction, VM execution, and divergence
   canary;
 - `MOCHA_NATIVE_OK`: direct C++ tokenizer/parser/analyzer/compiler/VM tests;
-- `MOCHA_BOOTSTRAP_CORPUS_OK`: the pinned upstream baseline subset;
+- `MOCHA_BOOTSTRAP_CORPUS_OK`: pinned upstream frontend acceptance/rejection evidence (not runtime
+  parity);
 - `MOCHA_VERIFY_OK`: the aggregate result.
 
 Any timeout, crash, engine error, missing or duplicate sentinel, unexpected diagnostic, or nonzero

@@ -54,7 +54,7 @@ recursion limits shared across nested and engine-reentrant calls, and reports so
 Diagnostics are stable Mocha-owned records with `code`, `message`, `path`, `line`, `column`,
 `end_line`, and `end_column`:
 
-- `M0xxx`: tokenizer;
+- `M0xxx`: tokenizer and resource/integration lifecycle;
 - `M1xxx`: parser;
 - `M2xxx`: analyzer;
 - `M3xxx`: compiler or recognized-but-not-executable construct;

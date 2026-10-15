@@ -242,6 +242,59 @@ godot::PackedStringArray MochaNativeTests::run() const {
 	}
 
 	{
+		const godot::String collection_types =
+				"var values: Array[int]\n"
+				"var lookup: Dictionary[String, int]\n";
+		Program valid;
+		MochaParser parser;
+		if (parser.parse(collection_types, "res://native_collection_types.mocha", valid) != godot::OK) {
+			failures.push_back("parser: valid erased collection element syntax was rejected");
+		}
+
+		Program invalid;
+		MochaParser invalid_parser;
+		if (invalid_parser.parse("var value: int[String]\n", "res://native_noncollection_type.mocha", invalid) != godot::ERR_PARSE_ERROR ||
+				invalid_parser.get_diagnostics().empty() || invalid_parser.get_diagnostics()[0].code != "M1012") {
+			failures.push_back("parser: non-collection element syntax did not produce M1012");
+		}
+	}
+
+	{
+		auto expect_analyzer_error = [&](const godot::String &p_source, const godot::String &p_code, const godot::String &p_case) {
+			Program invalid;
+			MochaParser parser;
+			if (parser.parse(p_source, "res://native_static_rule.mocha", invalid) != godot::OK) {
+				failures.push_back("analyzer: " + p_case + " fixture failed before analysis");
+				return;
+			}
+			MochaAnalyzer analyzer;
+			if (analyzer.analyze(invalid, "res://native_static_rule.mocha") != godot::ERR_COMPILATION_FAILED) {
+				failures.push_back("analyzer: " + p_case + " was accepted");
+				return;
+			}
+			bool found = false;
+			for (const Diagnostic &diagnostic : analyzer.get_diagnostics()) found |= diagnostic.code == p_code;
+			if (!found) failures.push_back("analyzer: " + p_case + " did not produce " + p_code);
+		};
+		expect_analyzer_error("func bad() -> void:\n\tvar value = 1\n\tvalue = \"text\"\n", "M2013", "inferred local reassignment");
+		expect_analyzer_error("func bad() -> void:\n\tif 1:\n\t\tpass\n", "M2015", "non-bool condition");
+		expect_analyzer_error("func bad() -> bool:\n\treturn 1 and true\n", "M2003", "non-bool logical operands");
+		expect_analyzer_error("func bad() -> Variant:\n\treturn \"%s\" % \"text\"\n", "M2003", "String percent formatting");
+	}
+
+	{
+		for (const godot::String &keyword : { godot::String("break"), godot::String("continue"), godot::String("assert"), godot::String("breakpoint") }) {
+			Program invalid;
+			MochaParser parser;
+			const godot::String source = "func bad() -> void:\n\t" + keyword + "\n";
+			if (parser.parse(source, "res://native_unsupported_statement.mocha", invalid) != godot::ERR_PARSE_ERROR ||
+					parser.get_diagnostics().empty() || parser.get_diagnostics()[0].code != "M1090") {
+				failures.push_back("parser: unsupported '" + keyword + "' statement did not produce M1090");
+			}
+		}
+	}
+
+	{
 		godot::String source = "func too_deep() -> Variant:\n\treturn ";
 		for (int i = 0; i < 300; ++i) source += "(";
 		source += "1";

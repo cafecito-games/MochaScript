@@ -11,8 +11,9 @@ divergence ledger in the same change.
    diagnostic for malformed input.
 3. Define inferred and required types in `mocha_analyzer.cpp`; add an `M2xxx` diagnostic for invalid
    programs. Do not rely on Variant-only behavior to hide a missing rule.
-4. Add an opcode or bytecode lowering in `mocha_compiler.cpp`. If execution is not ready, reject the
-   construct with `M3xxx` rather than emitting a placeholder.
+4. Declare new opcodes or instruction fields in `src/runtime/mocha_bytecode.h`, then lower them in
+   `mocha_compiler.cpp`. If execution is not ready, reject the construct with `M3xxx` rather than
+   emitting a placeholder.
 5. Implement runtime behavior in `mocha_vm.cpp`, including type and bounds checks and an `M4xxx`
    failure path.
 6. Add native layer coverage plus a `.mocha` integration fixture when the behavior crosses the

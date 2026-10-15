@@ -22,8 +22,8 @@ Updated: 2026-10-15
 - `example.mocha` attaches to a Godot `Node`, calls `get_name()`, mutates a typed member, and returns
   deterministic result `42` using arrays, a dictionary, indexing, calls, and control flow.
 - Syntax and type fixtures assert stable codes plus source path, line, and column.
-- Direct native C++ layer tests and a pinned three-fixture upstream baseline run in the canonical
-  verifier.
+- Direct native C++ layer tests and a pinned three-fixture upstream frontend baseline run in the
+  canonical verifier; the imported fixtures are parse/analyze evidence, not runtime parity.
 - `mocha_language_version()` proves intentional Mocha-only evolution across all execution layers.
 - Source materialization, create-only import, and review-only upstream delta scripts are verified.
 - Linux CI pins the private custom-engine release asset by immutable ID and SHA-256.
@@ -50,9 +50,10 @@ Harden and expand the executable bootstrap subset while preserving the owned lan
 
 The supported subset is listed in `docs/language/specification.md`. In particular, script
 inheritance, classes, signals, annotations/exports, `for`, `match`, async/coroutines, typed
-collection elements, index assignment, and editor completion remain unsupported. Recognized
-unsupported statements fail with `M1090`; compiler gaps fail with `M3xxx` rather than succeeding as
-no-ops.
+collection enforcement, index/member assignment, global utility functions, and editor completion
+remain unsupported. Recognized unsupported statements fail with `M1090`; top-level declaration
+gaps fail with `M1008`, invalid assignment targets with `M2090`, and compiler gaps with `M3xxx`
+rather than succeeding as no-ops.
 
 ## Next action
 
