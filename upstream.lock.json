@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "custom_godot": {
+    "repository": "git@github.com:cafecito-games/custom-godot.git",
+    "release": "v4.7.2-20260903.1",
+    "commit": "e762551293cd7312e0fd6695b76b1050d7e15bdc",
+    "patcher_config_sha256": "01e56c6a73d23bc9ac8370001b766c01c2a2ca456327ebff82a2187a67a80900",
+    "enabled_gdscript_patchers": [
+      {
+        "name": "autoload-path-uid",
+        "patch": "patchers/autoload-path-uid/autoload_path_uid.patch",
+        "sha256": "e84800cf8d64a88ad4d086cf3c0888fbc2a1ff60d922508fe6772006961dc70c"
+      }
+    ]
+  },
+  "godot": {
+    "repository": "https://github.com/godotengine/godot.git",
+    "commit": "ed1daf0bf001b61586d9930840f2f1394092c079",
+    "tag": "4.7.2-stable",
+    "gdscript_root": "modules/gdscript"
+  },
+  "imports": {
+    "transform_version": 1,
+    "files": {
+      "modules/gdscript/gdscript_tokenizer.h": "9f0800f722f4b33f68bab3bbfa9debcd1d01bb99c9ae27552a9e21e2bdc478e2",
+      "modules/gdscript/gdscript_tokenizer.cpp": "6d956bc85ad7455110977974ce62f24ba5a2e864968296c7d65cde67bfa634a8",
+      "modules/gdscript/gdscript_tokenizer_buffer.h": "ddbd0dbf4aa042da92c65a78d8a2673db13a7739d53ad656c953bba8b959ee97",
+      "modules/gdscript/gdscript_tokenizer_buffer.cpp": "afdcdd94ed308eccbaaa7ca075344b0c13ae9b48a85b800090faed7a9296f6b5",
+      "modules/gdscript/tests/scripts/parser/features/array.gd": "f391bc5db63699de5ce1a4975557626246061ff8bc7b3679a18f00e953a403d7",
+      "modules/gdscript/tests/scripts/parser/features/while.gd": "46c2db307ffa4510903721d7a81cc19910266bdc8a74d207b789ad77dde16ccc",
+      "modules/gdscript/tests/scripts/analyzer/errors/incompatible_assignment.gd": "513c4df9fbe9d2fc1c674b33fdd95fa10868f7dfbba1c1015db45fd5871cad14"
+    }
+  },
+  "installed_runtime": {
+    "release": "v4.7.2-20260903.1",
+    "version": "4.7.2.stable.cafecito_e76255129.ed1daf0bf",
+    "extension_api_sha256": "b61fb6208257c8d694463404d93d0b4d39e4d11a772babf012150bd57411d41b",
+    "precision": "single",
+    "linux_editor_release_asset_id": 542713790,
+    "linux_editor_sha256": "a9d5fb1a2998874cfc0da9100e690d3b76e46390fcf4da31585a70000a1e8ad6"
+  },
+  "godot_cpp_template": {
+    "repository": "https://github.com/godotengine/godot-cpp-template.git",
+    "commit": "d36f9d03e9e02dad22829f1faf4e03a347616df5"
+  },
+  "godot_cpp": {
+    "repository": "https://github.com/godotengine/godot-cpp.git",
+    "commit": "507ed9d840c01a3c5b2a39af8bb4000bfac30bf5",
+    "api_version": "4.7"
+  }
+}

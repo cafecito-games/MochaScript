@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "policy": "create-only; future upstream changes are review inputs",
+  "godot_commit": "ed1daf0bf001b61586d9930840f2f1394092c079",
+  "transform_version": 1,
+  "initial_import_date": "2026-10-15",
+  "components": {
+    "tokenizer": [
+      {
+        "source": "modules/gdscript/gdscript_tokenizer.h",
+        "source_sha256": "9f0800f722f4b33f68bab3bbfa9debcd1d01bb99c9ae27552a9e21e2bdc478e2",
+        "destination": "src/language/mocha_tokenizer.h",
+        "initial_transformed_sha256": "afea5453e54fab786abc5f52ea053b1505121d4adb6955202348a4cfdfa1fdfd"
+      },
+      {
+        "source": "modules/gdscript/gdscript_tokenizer.cpp",
+        "source_sha256": "6d956bc85ad7455110977974ce62f24ba5a2e864968296c7d65cde67bfa634a8",
+        "destination": "src/language/mocha_tokenizer.cpp",
+        "initial_transformed_sha256": "1ce0f94969ac4f0650dff51d680fcba31b7c7391c0896ad2968827c5bd9c9794"
+      }
+    ],
+    "bootstrap-fixtures": [
+      {
+        "source": "modules/gdscript/tests/scripts/parser/features/array.gd",
+        "source_sha256": "f391bc5db63699de5ce1a4975557626246061ff8bc7b3679a18f00e953a403d7",
+        "destination": "project/tests/upstream/parser/array.mocha",
+        "initial_transformed_sha256": "f391bc5db63699de5ce1a4975557626246061ff8bc7b3679a18f00e953a403d7"
+      },
+      {
+        "source": "modules/gdscript/tests/scripts/parser/features/while.gd",
+        "source_sha256": "46c2db307ffa4510903721d7a81cc19910266bdc8a74d207b789ad77dde16ccc",
+        "destination": "project/tests/upstream/parser/while.mocha",
+        "initial_transformed_sha256": "46c2db307ffa4510903721d7a81cc19910266bdc8a74d207b789ad77dde16ccc"
+      },
+      {
+        "source": "modules/gdscript/tests/scripts/analyzer/errors/incompatible_assignment.gd",
+        "source_sha256": "513c4df9fbe9d2fc1c674b33fdd95fa10868f7dfbba1c1015db45fd5871cad14",
+        "destination": "project/tests/upstream/analyzer/incompatible_assignment.mocha",
+        "initial_transformed_sha256": "513c4df9fbe9d2fc1c674b33fdd95fa10868f7dfbba1c1015db45fd5871cad14"
+      }
+    ]
+  }
+}

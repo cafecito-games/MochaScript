@@ -6,6 +6,7 @@
 *.lo
 *.o
 *.obj
+*.os
 
 # Precompiled Headers
 *.gch
@@ -66,3 +67,20 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+__pycache__/
+*.py[cod]
+
+# Local semantic index; never part of the language source.
+.grafo/
+
+# SCons state and generated Godot project state.
+.sconsign*.dblite
+.godot/
+project/.godot/
+!project/.godot/
+project/.godot/*
+!project/.godot/extension_list.cfg
+*.gd.uid
+project/bin/*/
+bin/
+src/gen/
