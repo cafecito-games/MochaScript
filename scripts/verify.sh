@@ -50,17 +50,46 @@ validate_uid_state() {
     fi
 }
 
-snapshot_tracked_uids() {
+snapshot_index_uids() {
     local uid_path
     while IFS= read -r uid_path; do
-        sha256sum "$repo_root/$uid_path"
+        local digest
+        digest=$(git -C "$repo_root" show ":$uid_path" | sha256sum | cut -d' ' -f1)
+        printf '%s  %s\n' "$digest" "${uid_path#project/}"
     done < <(git -C "$repo_root" ls-files 'project/*.uid' 'project/**/*.uid')
 }
 
+snapshot_project_uids() {
+    local project_root=$1
+    local uid_path
+    while IFS= read -r -d '' uid_path; do
+        local digest
+        digest=$(sha256sum "$uid_path" | cut -d' ' -f1)
+        printf '%s  %s\n' "$digest" "${uid_path#"$project_root/"}"
+    done < <(find "$project_root" -path "$project_root/.godot" -prune -o -type f -name '*.uid' -print0 | sort -z)
+}
+
 validate_uid_state
-uid_snapshot_before="$log_dir/uids-before.sha256"
-uid_snapshot_after="$log_dir/uids-after.sha256"
-snapshot_tracked_uids >"$uid_snapshot_before"
+uid_snapshot_expected="$log_dir/uids-index.sha256"
+uid_snapshot_working="$log_dir/uids-working.sha256"
+uid_snapshot_debug="$log_dir/uids-debug.sha256"
+uid_snapshot_release="$log_dir/uids-release.sha256"
+snapshot_index_uids >"$uid_snapshot_expected"
+snapshot_project_uids "$repo_root/project" >"$uid_snapshot_working"
+if ! cmp -s "$uid_snapshot_expected" "$uid_snapshot_working"; then
+    echo "Tracked UID sidecars differ from the Git index before verification:" >&2
+    diff -u "$uid_snapshot_expected" "$uid_snapshot_working" >&2 || true
+    exit 1
+fi
+
+debug_project="$log_dir/debug-project"
+python3 - "$repo_root/project" "$debug_project" <<'PY'
+from pathlib import Path
+import shutil
+import sys
+
+shutil.copytree(Path(sys.argv[1]), Path(sys.argv[2]), ignore=shutil.ignore_patterns(".godot"))
+PY
 
 editor_log="$log_dir/editor-import.log"
 editor_test_log="$log_dir/editor-test.log"
@@ -99,7 +128,7 @@ run_godot() {
     local label=$1
     local log=$2
     shift 2
-    run_godot_in_project "$label" "$log" "$repo_root/project" debug "$@"
+    run_godot_in_project "$label" "$log" "$debug_project" debug "$@"
 }
 
 run_godot "editor import" "$editor_log" --editor --quit
@@ -243,17 +272,20 @@ if grep -Eiq 'SCRIPT ERROR|ERROR:|crash|segmentation fault' "$editor_log" "$reco
 fi
 
 validate_uid_state
-snapshot_tracked_uids >"$uid_snapshot_after"
-if ! cmp -s "$uid_snapshot_before" "$uid_snapshot_after"; then
-    echo "Godot rewrote a tracked UID sidecar during editor import:" >&2
-    diff -u "$uid_snapshot_before" "$uid_snapshot_after" >&2 || true
-    exit 1
-fi
+snapshot_project_uids "$debug_project" >"$uid_snapshot_debug"
+snapshot_project_uids "$release_project" >"$uid_snapshot_release"
+for uid_snapshot in "$uid_snapshot_debug" "$uid_snapshot_release"; do
+    if ! cmp -s "$uid_snapshot_expected" "$uid_snapshot"; then
+        echo "Godot rewrote or generated a UID sidecar in an isolated verification project:" >&2
+        diff -u "$uid_snapshot_expected" "$uid_snapshot" >&2 || true
+        exit 1
+    fi
+done
 
 rm -f -- "$editor_log" "$editor_test_log" "$recognition_log" "$tokenizer_log" "$frontend_log" \
     "$execution_log" "$native_log" "$bootstrap_corpus_log" "$release_editor_log" \
     "$release_editor_test_log" "$release_recognition_log" "$release_execution_log" \
-    "$uid_snapshot_before" "$uid_snapshot_after"
-rm -rf -- "$log_dir/debug" "$log_dir/release" "$release_project"
+    "$uid_snapshot_expected" "$uid_snapshot_working" "$uid_snapshot_debug" "$uid_snapshot_release"
+rm -rf -- "$log_dir/debug" "$log_dir/release" "$debug_project" "$release_project"
 rmdir -- "$log_dir"
 echo "MOCHA_VERIFY_OK"

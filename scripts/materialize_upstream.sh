@@ -39,6 +39,10 @@ if [[ -n ${MOCHA_CUSTOM_GODOT_SOURCE:-} ]]; then
 else
     target=$cache_base/custom-godot-$custom_commit
 fi
+if [[ "$explicit_source" == true && ! -e "$target" ]]; then
+    echo "MOCHA_CUSTOM_GODOT_SOURCE must name an existing checkout: $target" >&2
+    exit 1
+fi
 
 mkdir -p "$cache_base"
 target_parent=$(dirname "$target")
@@ -123,6 +127,11 @@ if [[ "$godot_tag_commit" != "$godot_commit" ]]; then
 fi
 for baseline_commit in "${baseline_commits[@]}"; do
     if ! git -C "$godot_root" cat-file -e "$baseline_commit^{commit}" 2>/dev/null; then
+        if [[ "$explicit_source" == true ]]; then
+            echo "The explicitly supplied Godot checkout lacks provenance baseline $baseline_commit." >&2
+            echo "Fetch that commit manually before retrying; MochaScript will not modify this checkout." >&2
+            exit 1
+        fi
         git -C "$godot_root" fetch --depth=1 origin "$baseline_commit"
     fi
     git -C "$godot_root" cat-file -e "$baseline_commit^{commit}" || {

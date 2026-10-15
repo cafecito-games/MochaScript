@@ -48,5 +48,5 @@ for argument in "$@"; do
     esac
 done
 
-env -u SCONSFLAGS "$scons_command" --no-site-dir -C "$repo_root" target=template_debug -j"$jobs" "$@"
-env -u SCONSFLAGS "$scons_command" --no-site-dir -C "$repo_root" target=template_release -j"$jobs" "$@"
+env -u SCONSFLAGS -u SCONS_CACHE "$scons_command" --no-site-dir -C "$repo_root" target=template_debug -j"$jobs" "$@"
+env -u SCONSFLAGS -u SCONS_CACHE "$scons_command" --no-site-dir -C "$repo_root" target=template_release -j"$jobs" "$@"

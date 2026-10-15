@@ -19,7 +19,7 @@ once against the debug library. A copied project remaps its debug manifest slot 
 library declared by the shipping `.release` key and repeats editor, recognition, and VM-execution
 smoke tests against the optimized binary. Both manifest paths must resolve to their corresponding
 built artifacts. That lane also proves the debug-only native C++ test class is not registered in
-release builds.
+release builds. Both lanes use fresh copies that exclude persistent `.godot` state.
 
 - `MOCHA_RECOGNITION_OK`: language/resource identity and source preservation;
 - `MOCHA_EDITOR_OK`: non-tool scripts use placeholders and cannot instantiate in editor context,
@@ -49,4 +49,5 @@ is embedded in the repository.
 Godot resource identities are repository state. Every tracked `.gd`, `.mocha`, and `.gdextension`
 file under `project/` must have its generated `.uid` sidecar committed. The canonical verifier fails
 when one is missing, when an import leaves any untracked UID sidecar, or when editor import rewrites
-a tracked sidecar. Contributors should add new source resources and their sidecars together.
+a tracked sidecar. It hashes the Git-index versions and compares both isolated project copies against
+that authority. Contributors should add new source resources and their sidecars together.
