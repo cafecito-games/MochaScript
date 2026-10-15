@@ -58,6 +58,11 @@ public:
 	// matches one receiver and expected dispatch, including Object.call/callv targets.
 	static bool publish_nested_failure(const RuntimeFailure &p_failure, uint64_t p_owner_id,
 			const StringName &p_method);
+#ifdef DEBUG_ENABLED
+	static bool test_failure_capture_match(uint64_t p_capture_owner, const StringName &p_expected_method,
+			const StringName &p_alternate_method, uint64_t p_publication_owner,
+			const StringName &p_publication_method);
+#endif
 };
 
 } // namespace mocha_script

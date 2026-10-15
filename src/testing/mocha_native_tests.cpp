@@ -86,6 +86,12 @@ godot::PackedStringArray MochaNativeTests::run() const {
 				"res://origin.mocha:3:4: M4001: nested failure (called from res://caller.mocha:9:10)") {
 			failures.push_back("vm: shared runtime failure formatting lost its origin or call site");
 		}
+		if (MochaVM::test_failure_capture_match(41, "set_script", StringName(), 42, StringName())) {
+			failures.push_back("vm: initializer failure capture ignored the receiver identity");
+		}
+		if (!MochaVM::test_failure_capture_match(41, "set_script", StringName(), 41, StringName())) {
+			failures.push_back("vm: direct set_script capture rejected its initializer failure");
+		}
 	}
 
 	{
@@ -323,7 +329,9 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			"func indirect_set_script_callv(script: Variant) -> Variant:\n"
 			"\treturn self.callv(\"set_script\", [script])\n"
 			"func callback_initializer_mismatch() -> bool:\n"
-			"\treturn initializer_mismatch_probe()\n";
+			"\treturn initializer_mismatch_probe()\n"
+			"func direct_set_script(script: Variant) -> void:\n"
+			"\tset_script(script)\n";
 	Program program;
 	MochaParser parser;
 	if (parser.parse(executable, "res://native_pipeline.mocha", program) != godot::OK) {
@@ -529,6 +537,14 @@ godot::PackedStringArray MochaNativeTests::run() const {
 										failure.path != "res://native_broken_initializer.mocha" || !failure_at(failure, 3, 1) ||
 										!called_at(failure, "res://native_pipeline.mocha", 120, 9)) {
 									failures.push_back("vm: callv(set_script) did not propagate an initializer failure");
+								}
+								nested_owner->set_script(nested_script);
+								MochaVM::call(*module, *module->find_function("direct_set_script"), nested_owner.ptr(), nested_members,
+										broken_script_arguments, 1, call_error, failure);
+								if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
+										failure.path != "res://native_broken_initializer.mocha" || !failure_at(failure, 3, 1) ||
+										!called_at(failure, "res://native_pipeline.mocha", 124, 2)) {
+									failures.push_back("vm: direct set_script did not propagate an initializer failure");
 								}
 							}
 						}

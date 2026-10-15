@@ -29,7 +29,8 @@ Updated: 2026-10-15
   canonical verifier; the imported fixtures are parse/analyze evidence, not runtime parity.
 - `mocha_language_version()` proves intentional Mocha-only evolution across all execution layers.
 - Runtime failures carry exact tested source spans; failures captured across an engine-mediated
-  nested Mocha call are re-attributed to the call site without leaking inner Godot argument metadata.
+  nested Mocha call keep their origin and record the first outer call site without leaking inner
+  Godot argument metadata.
 - Omitted declarations infer carriers, explicit `Variant` remains dynamic, and unsafe current or
   forward reads of members whose carrier is not yet inferred fail statically with `M2032`.
 - Source materialization, create-only import, and review-only upstream delta scripts are verified.

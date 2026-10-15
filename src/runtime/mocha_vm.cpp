@@ -76,22 +76,36 @@ Variant::Type variant_type_for(const TypeRef &p_type) {
 }
 
 struct NestedFailureCapture {
-	RuntimeFailure failure;
+	RuntimeFailure *failure = nullptr;
 	uint64_t owner_id = 0;
-	StringName expected_method;
-	StringName alternate_method;
+	const StringName *expected_method = nullptr;
+	const StringName *alternate_method = nullptr;
 };
 
 thread_local std::vector<NestedFailureCapture> vm_failure_captures;
 
 struct NestedFailureCaptureScope {
+	RuntimeFailure captured_failure;
 	NestedFailureCaptureScope(uint64_t p_owner_id, const StringName &p_expected_method,
-			const StringName &p_alternate_method = {}) {
-		vm_failure_captures.push_back({ {}, p_owner_id, p_expected_method, p_alternate_method });
+			const StringName &p_alternate_method) {
+		vm_failure_captures.push_back({ &captured_failure, p_owner_id, &p_expected_method, &p_alternate_method });
 	}
 	~NestedFailureCaptureScope() { vm_failure_captures.pop_back(); }
-	RuntimeFailure failure() const { return vm_failure_captures.back().failure; }
+	RuntimeFailure failure() const { return captured_failure; }
 };
+
+struct VMNames {
+	StringName call = "call";
+	StringName callv = "callv";
+	StringName set_script = "set_script";
+	StringName language_version = "mocha_language_version";
+	StringName object = "Object";
+};
+
+const VMNames &vm_names() {
+	static const VMNames names;
+	return names;
+}
 
 bool take_nested_failure(const RuntimeFailure &p_captured, const String &p_call_path,
 		const SourceSpan &p_call_span,
@@ -178,7 +192,7 @@ bool evaluate_integer_binary(MochaTokenizer::Token::Type p_operation, int64_t p_
 } // namespace
 
 MochaNestedFailureShield::MochaNestedFailureShield() {
-	vm_failure_captures.push_back({});
+	vm_failure_captures.push_back({ nullptr, 0, nullptr, nullptr });
 }
 MochaNestedFailureShield::~MochaNestedFailureShield() {
 	vm_failure_captures.pop_back();
@@ -227,7 +241,7 @@ bool MochaVM::convert_value(const Variant &p_value, const TypeRef &p_type, Varia
 			if (p_value.get_type() != Variant::OBJECT) return false;
 			Object *object = p_value.get_validated_object();
 			if (object == nullptr && ObjectID(p_value).is_valid()) return false;
-			if (object != nullptr && !p_type.name.is_empty() && p_type.name != StringName("Object") &&
+			if (object != nullptr && !p_type.name.is_empty() && p_type.name != vm_names().object &&
 					!ClassDB::is_parent_class(object->get_class(), p_type.name)) return false;
 		} break;
 		case TypeKind::VOID:
@@ -433,11 +447,13 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				if (!pop(instruction, key) || !pop(instruction, container)) return {};
 				bool valid = false;
 				Variant value;
-				{
+					if (container.get_type() == Variant::OBJECT) {
 					// Property access may execute arbitrary engine callbacks. This shield
 					// prevents their failures from leaking into an enclosing direct call.
-					NestedFailureCaptureScope capture(0, StringName());
+						MochaNestedFailureShield shield;
 					value = container.get(key, &valid);
+					} else {
+						value = container.get(key, &valid);
 				}
 				if (!owner_is_alive()) { fail(r_failure, instruction.span, "The MochaScript owner was freed during an index operation."); return {}; }
 				if (!valid) { fail(r_failure, instruction.span, "Invalid index operation in MochaScript."); return {}; }
@@ -448,10 +464,12 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				if (!pop(instruction, receiver)) return {};
 				bool valid = false;
 				Variant value;
-				{
+					if (receiver.get_type() == Variant::OBJECT) {
 					// This is a callback shield, not a direct Mocha call capture.
-					NestedFailureCaptureScope capture(0, StringName());
+						MochaNestedFailureShield shield;
 					value = receiver.get_named(instruction.name, valid);
+					} else {
+						value = receiver.get_named(instruction.name, valid);
 				}
 				if (!owner_is_alive()) { fail(r_failure, instruction.span, "The MochaScript owner was freed during a member read."); return {}; }
 				if (!valid) { fail(r_failure, instruction.span, vformat("Value has no member '%s'.", String(instruction.name))); return {}; }
@@ -479,9 +497,11 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				else if (!variant_operator(instruction.operation, operation)) { fail(r_failure, instruction.span, "Unsupported unary bytecode operator."); return {}; }
 				Variant result;
 				bool valid = false;
-				{
-					NestedFailureCaptureScope shield(0, StringName());
+					if (value.get_type() == Variant::OBJECT) {
+						MochaNestedFailureShield shield;
 					Variant::evaluate(operation, value, Variant(), result, valid);
+					} else {
+						Variant::evaluate(operation, value, Variant(), result, valid);
 				}
 				if (!owner_is_alive()) { fail(r_failure, instruction.span, "The MochaScript owner was freed during a unary operation."); return {}; }
 				if (!valid) { fail(r_failure, instruction.span, "Invalid unary operation in MochaScript."); return {}; }
@@ -511,9 +531,11 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				if (!variant_operator(instruction.operation, operation)) { fail(r_failure, instruction.span, "Unsupported binary bytecode operator."); return {}; }
 				Variant result;
 				bool valid = false;
-				{
-					NestedFailureCaptureScope shield(0, StringName());
+					if (left.get_type() == Variant::OBJECT || right.get_type() == Variant::OBJECT) {
+						MochaNestedFailureShield shield;
 					Variant::evaluate(operation, left, right, result, valid);
+					} else {
+						Variant::evaluate(operation, left, right, result, valid);
 				}
 				if (!owner_is_alive()) { fail(r_failure, instruction.span, "The MochaScript owner was freed during a binary operation."); return {}; }
 				if (!valid) { fail(r_failure, instruction.span, "Invalid binary operation in MochaScript."); return {}; }
@@ -537,13 +559,14 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				RuntimeFailure nested_failure;
 				const uint64_t receiver_id = receiver.get_type() == Variant::OBJECT ? uint64_t(ObjectID(receiver)) : 0;
 				StringName alternate_method;
-				if ((instruction.name == StringName("call") || instruction.name == StringName("callv")) &&
+				const VMNames &names = vm_names();
+				if ((instruction.name == names.call || instruction.name == names.callv) &&
 						!values.empty() && (values[0].get_type() == Variant::STRING ||
 								values[0].get_type() == Variant::STRING_NAME)) {
 					alternate_method = StringName(values[0]);
 				}
 				if (instruction.opcode == OpCode::CALL_SELF) {
-					if (instruction.name == StringName("mocha_language_version")) {
+					if (instruction.name == names.language_version) {
 						if (!pointers.empty()) {
 							nested_error.error = GDEXTENSION_CALL_ERROR_TOO_MANY_ARGUMENTS;
 							nested_error.expected = 0;
@@ -653,18 +676,32 @@ bool MochaVM::publish_nested_failure(const RuntimeFailure &p_failure, uint64_t p
 		const StringName &p_method) {
 	if (p_failure.message.is_empty() || vm_failure_captures.empty()) return false;
 	NestedFailureCapture &capture = vm_failure_captures.back();
+	if (capture.failure == nullptr || capture.expected_method == nullptr) return false;
+	const StringName &expected_method = *capture.expected_method;
+	const StringName &alternate_method = *capture.alternate_method;
 	bool method_matches = false;
 	if (p_method.is_empty()) {
-		method_matches = capture.expected_method == StringName("set_script") ||
-				capture.alternate_method == StringName("set_script");
+		method_matches = expected_method == vm_names().set_script || alternate_method == vm_names().set_script;
 	} else {
-		method_matches = capture.expected_method == p_method ||
-				(!capture.alternate_method.is_empty() && capture.alternate_method == p_method);
+		method_matches = expected_method == p_method ||
+				(!alternate_method.is_empty() && alternate_method == p_method);
 	}
-	if (capture.owner_id != p_owner_id || !capture.failure.message.is_empty() || !method_matches) return false;
-	capture.failure = p_failure;
-	capture.failure.preserve_call_error = false;
+	if (capture.owner_id != p_owner_id || !capture.failure->message.is_empty() || !method_matches) return false;
+	*capture.failure = p_failure;
+	capture.failure->preserve_call_error = false;
 	return true;
 }
+
+#ifdef DEBUG_ENABLED
+bool MochaVM::test_failure_capture_match(uint64_t p_capture_owner, const StringName &p_expected_method,
+		const StringName &p_alternate_method, uint64_t p_publication_owner,
+		const StringName &p_publication_method) {
+	NestedFailureCaptureScope capture(p_capture_owner, p_expected_method, p_alternate_method);
+	RuntimeFailure failure;
+	failure.code = "M4001";
+	failure.message = "capture test";
+	return publish_nested_failure(failure, p_publication_owner, p_publication_method);
+}
+#endif
 
 } // namespace mocha_script
