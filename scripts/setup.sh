@@ -21,6 +21,20 @@ from pathlib import Path
 root = Path.cwd()
 lock = json.loads((root / "upstream.lock.json").read_text())
 
+expected_scons = lock["build_tools"]["scons"]["version"]
+scons_output = subprocess.run(
+    ["scons", "--version"],
+    check=True,
+    text=True,
+    stdout=subprocess.PIPE,
+).stdout
+scons_marker = "SCons: v"
+scons_line = next((line.strip() for line in scons_output.splitlines() if scons_marker in line), "")
+actual_scons = scons_line.split(scons_marker, 1)[1].split(".", 3)[:3] if scons_line else []
+actual_scons = ".".join(actual_scons)
+if actual_scons != expected_scons:
+    raise SystemExit(f"SCons mismatch: expected {expected_scons}, got {actual_scons or 'unknown'}")
+
 expected_cpp = lock["godot_cpp"]["commit"]
 actual_cpp = subprocess.run(
     ["git", "-C", str(root / "godot-cpp"), "rev-parse", "HEAD"],

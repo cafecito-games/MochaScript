@@ -40,8 +40,9 @@ that operation the destination is Mocha-owned forever.
 ./scripts/review_upstream.sh
 ```
 
-The command verifies the pinned source and writes unified deltas under the user cache. It never
-modifies `src/` or fixtures. To evaluate a newer Godot revision, update a branch's lock and expected
-hashes deliberately, generate review reports, then manually port only changes that fit the current
-Mocha specification. Never run a bulk overwrite. A GDScript behavior change is evidence, not a
-Mocha compatibility requirement.
+The command verifies both the immutable original import recorded in `source_imports.json` and the
+candidate pinned source. It writes separate upstream-only (`*-upstream.patch`) and candidate-to-Mocha
+(`*-mocha.patch`) deltas under the user cache, and never modifies `src/` or fixtures. To evaluate a
+newer Godot revision, update a branch's lock and expected hashes deliberately, generate both reports,
+then manually port only changes that fit the current Mocha specification. Never run a bulk overwrite.
+A GDScript behavior change is evidence, not a Mocha compatibility requirement.

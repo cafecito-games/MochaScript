@@ -11,12 +11,16 @@ source_root=${MOCHA_CUSTOM_GODOT_SOURCE:-$cache_root/upstream/custom-godot}
 "$repo_root/scripts/materialize_upstream.sh" >/dev/null
 mkdir -p "$report_root"
 python3 "$repo_root/scripts/import_gdscript.py" review tokenizer \
-    --custom-godot "$source_root" --output "$report_root/tokenizer.patch"
+    --custom-godot "$source_root" \
+    --output "$report_root/tokenizer-upstream.patch" \
+    --mocha-output "$report_root/tokenizer-mocha.patch"
 python3 "$repo_root/scripts/import_gdscript.py" review bootstrap-fixtures \
-    --custom-godot "$source_root" --output "$report_root/bootstrap-fixtures.patch"
+    --custom-godot "$source_root" \
+    --output "$report_root/bootstrap-fixtures-upstream.patch" \
+    --mocha-output "$report_root/bootstrap-fixtures-mocha.patch"
 
 godot_commit=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["godot"]["commit"])' "$repo_root/upstream.lock.json")
-printf 'Generated review-only deltas for Godot %s.\nNo MochaScript-owned source was overwritten.\n' \
+printf 'Generated upstream-only and Mocha-owned deltas for Godot %s.\nNo MochaScript-owned source was overwritten.\n' \
     "$godot_commit" >"$report_root/README.txt"
 
 echo "Review reports: $report_root"
