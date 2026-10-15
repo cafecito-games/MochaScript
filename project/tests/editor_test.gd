@@ -31,6 +31,8 @@ func _initialize() -> void:
 	var save_path := "user://mocha_editor_save_test.mocha"
 	var unsaved := MochaScript.new()
 	unsaved.set_source_code("extends RefCounted\nfunc saved_value() -> int:\n\treturn 7\n")
+	if ResourceSaver.save(unsaved, "res://example.mocha/cannot_write.mocha") == OK:
+		failures.append("editor reported success while saving MochaScript to an unwritable path")
 	if ResourceSaver.save(unsaved, save_path) != OK:
 		failures.append("editor could not save a new MochaScript")
 	else:

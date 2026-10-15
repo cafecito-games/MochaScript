@@ -102,6 +102,21 @@ godot::PackedStringArray MochaNativeTests::run() const {
 		}
 	}
 
+	{
+		godot::Ref<MochaScript> moved;
+		moved.instantiate();
+		moved->set_diagnostic_path_for_validation("res://old_diagnostic_path.mocha");
+		moved->_set_source_code("extends RefCounted\n");
+		moved->_reload(false);
+		moved->set_path("user://mocha_native_moved_path.mocha");
+		moved->_set_source_code("extends RefCounted\nfunc broken(\n");
+		const godot::TypedArray<godot::Dictionary> diagnostics = moved->get_diagnostics();
+		const godot::Dictionary first = diagnostics.is_empty() ? godot::Dictionary() : godot::Dictionary(diagnostics[0]);
+		if (first.get("path", "") != "user://mocha_native_moved_path.mocha") {
+			failures.push_back("script: recompilation after a move retained its old diagnostic path");
+		}
+	}
+
 	const godot::String executable =
 			"extends RefCounted\n"
 			"var seed: int = 2\n"

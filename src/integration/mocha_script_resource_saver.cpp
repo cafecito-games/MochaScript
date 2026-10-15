@@ -21,9 +21,14 @@ godot::Error MochaScriptResourceSaver::_save(const godot::Ref<godot::Resource> &
 
 	godot::Ref<godot::FileAccess> file = godot::FileAccess::open(p_path, godot::FileAccess::WRITE);
 	if (file.is_null()) return godot::FileAccess::get_open_error();
-	file->store_string(script->_get_source_code());
+	if (!file->store_string(script->_get_source_code())) {
+		file->close();
+		return godot::ERR_FILE_CANT_WRITE;
+	}
+	file->flush();
 	const godot::Error write_error = file->get_error();
-	return write_error == godot::OK || write_error == godot::ERR_FILE_EOF ? godot::OK : write_error;
+	file->close();
+	return write_error == godot::OK ? godot::OK : godot::ERR_FILE_CANT_WRITE;
 }
 
 bool MochaScriptResourceSaver::_recognize(const godot::Ref<godot::Resource> &p_resource) const {

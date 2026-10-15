@@ -188,9 +188,9 @@ godot::Error MochaScript::_reload(bool) {
 	diagnostics.clear();
 	program.reset();
 	compiled_module.reset();
-	const godot::String source_path = !diagnostic_path.is_empty()
-			? diagnostic_path
-			: (get_path().is_empty() ? godot::String("<memory>") : get_path());
+	const godot::String source_path = !get_path().is_empty()
+			? get_path()
+			: (diagnostic_path.is_empty() ? godot::String("<memory>") : diagnostic_path);
 
 	auto append_diagnostic = [this](const Diagnostic &p_source) {
 		godot::Dictionary diagnostic;
