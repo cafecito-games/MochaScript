@@ -50,7 +50,8 @@ index, and expected carrier while publishing the source-located Mocha failure. F
 nested Mocha call remain script runtime failures rather than being misattributed to the host caller.
 Their originating script path and span are preserved; an engine-mediated propagation also records
 the first Mocha call site. Indirect dispatch through `Object.call` and `callv` cannot turn a nested
-failure into a successful `null` result.
+failure into a successful `null` result, while unrelated engine callbacks on the same receiver do
+not abort the direct call that triggered them.
 
 Untyped declarations infer and retain the initializer's static carrier type, so `var value = 1`
 cannot later store a `String` (`M2013`); an explicit `: Variant` is never narrowed. Statically known

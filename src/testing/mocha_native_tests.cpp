@@ -28,10 +28,57 @@ namespace mocha_script {
 
 void MochaNativeTests::_bind_methods() {
 	godot::ClassDB::bind_method(godot::D_METHOD("run"), &MochaNativeTests::run);
+	godot::ClassDB::bind_method(godot::D_METHOD("mismatched_failure_probe"), &MochaNativeTests::mismatched_failure_probe);
+	godot::ClassDB::bind_method(godot::D_METHOD("multiple_failure_probe"), &MochaNativeTests::multiple_failure_probe);
+	godot::ClassDB::bind_method(godot::D_METHOD("shielded_failure_probe"), &MochaNativeTests::shielded_failure_probe);
+}
+
+bool MochaNativeTests::mismatched_failure_probe() const {
+	RuntimeFailure failure;
+	failure.code = "M4001";
+	failure.message = "unrelated callback failure";
+	failure.path = "res://native_callback_probe.mocha";
+	failure.span = { 3, 4, 3, 8 };
+	return MochaVM::publish_nested_failure(failure, get_instance_id(), "_notification");
+}
+
+bool MochaNativeTests::multiple_failure_probe() const {
+	RuntimeFailure first;
+	first.code = "M4001";
+	first.message = "first direct failure";
+	first.path = "res://native_callback_probe.mocha";
+	first.span = { 5, 6, 5, 10 };
+	RuntimeFailure second = first;
+	second.message = "second direct failure";
+	const bool captured_first = MochaVM::publish_nested_failure(first, get_instance_id(), "multiple_failure_probe");
+	const bool captured_second = MochaVM::publish_nested_failure(second, get_instance_id(), "multiple_failure_probe");
+	return captured_first && !captured_second;
+}
+
+bool MochaNativeTests::shielded_failure_probe() const {
+	MochaNestedFailureShield shield;
+	RuntimeFailure failure;
+	failure.code = "M4001";
+	failure.message = "shielded callback failure";
+	return MochaVM::publish_nested_failure(failure, get_instance_id(), "shielded_failure_probe");
 }
 
 godot::PackedStringArray MochaNativeTests::run() const {
 	godot::PackedStringArray failures;
+
+	{
+		RuntimeFailure failure;
+		failure.code = "M4001";
+		failure.message = "nested failure";
+		failure.path = "res://origin.mocha";
+		failure.span = { 3, 4, 3, 8 };
+		failure.call_path = "res://caller.mocha";
+		failure.call_span = { 9, 10, 9, 14 };
+		if (MochaVM::format_failure(failure, "res://fallback.mocha") !=
+				"res://origin.mocha:3:4: M4001: nested failure (called from res://caller.mocha:9:10)") {
+			failures.push_back("vm: shared runtime failure formatting lost its origin or call site");
+		}
+	}
 
 	{
 		MochaTokenizerText tokenizer;
@@ -253,7 +300,16 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			"func explicit_forward_wrong() -> int:\n"
 			"\treturn self.add(\"wrong\")\n"
 			"func indirect_failure() -> Variant:\n"
-			"\treturn self.call(\"dynamic_modulo\", \"%d\")\n";
+			"\treturn self.call(\"dynamic_modulo\", \"%d\")\n"
+			"func callback_mismatch() -> bool:\n"
+			"\treturn mismatched_failure_probe()\n"
+			"func callback_first_failure() -> int:\n"
+			"\tmultiple_failure_probe()\n"
+			"\treturn 1\n"
+			"func callback_shielded() -> bool:\n"
+			"\treturn shielded_failure_probe()\n"
+			"func indirect_failure_callv() -> Variant:\n"
+			"\treturn self.callv(\"dynamic_modulo\", [\"%d\"])\n";
 	Program program;
 	MochaParser parser;
 	if (parser.parse(executable, "res://native_pipeline.mocha", program) != godot::OK) {
@@ -428,8 +484,39 @@ godot::PackedStringArray MochaNativeTests::run() const {
 									!called_at(failure, "res://native_pipeline.mocha", 107, 9)) {
 								failures.push_back("vm: indirect nested call treated a script failure as a successful nil result");
 							}
+							MochaVM::call(*module, *module->find_function("indirect_failure_callv"), nested_owner.ptr(), nested_members,
+									nullptr, 0, call_error, failure);
+							if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
+									failure.path != "res://native_nested_runtime.mocha" || !failure_at(failure, 58, 9) ||
+									!called_at(failure, "res://native_pipeline.mocha", 116, 9)) {
+								failures.push_back("vm: callv nested failure was treated as a successful nil result");
+							}
 						}
 						nested_owner->set_script(godot::Variant());
+					}
+					godot::Vector<godot::Variant> callback_members;
+					RuntimeFailure callback_initialization_failure;
+					auto *callback_owner = const_cast<MochaNativeTests *>(this);
+					if (MochaVM::initialize(*module, callback_owner, callback_members, callback_initialization_failure) != godot::OK) {
+						failures.push_back("vm: callback-capture fixture did not initialize");
+					} else {
+						result = MochaVM::call(*module, *module->find_function("callback_mismatch"), callback_owner,
+								callback_members, nullptr, 0, call_error, failure);
+						if (call_error.error != GDEXTENSION_CALL_OK || !failure.message.is_empty() || result != godot::Variant(false)) {
+							failures.push_back("vm: an unrelated callback claimed a direct method failure capture");
+						}
+						MochaVM::call(*module, *module->find_function("callback_first_failure"), callback_owner,
+								callback_members, nullptr, 0, call_error, failure);
+						if (call_error.error != GDEXTENSION_CALL_OK || failure.message != "first direct failure" ||
+								failure.path != "res://native_callback_probe.mocha" || !failure_at(failure, 5, 6) ||
+								!called_at(failure, "res://native_pipeline.mocha", 111, 2)) {
+							failures.push_back("vm: direct failure capture did not preserve the first matching failure");
+						}
+						result = MochaVM::call(*module, *module->find_function("callback_shielded"), callback_owner,
+								callback_members, nullptr, 0, call_error, failure);
+						if (call_error.error != GDEXTENSION_CALL_OK || !failure.message.is_empty() || result != godot::Variant(false)) {
+							failures.push_back("vm: a shielded engine callback claimed an outer failure capture");
+						}
 					}
 					invoke("dynamic_store", {}, call_error, failure);
 					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty() || !failure_at(failure, 46, 2)) failures.push_back("vm: dynamic store failure exposed an unsafe Godot call error or wrong span");

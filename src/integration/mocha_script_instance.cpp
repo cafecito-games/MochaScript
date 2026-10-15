@@ -392,23 +392,18 @@ Variant MochaScriptInstance::call(const StringName &p_method, const Variant **p_
 	Variant result = MochaVM::call(*module, *function, owner, members,
 			p_arguments, p_argument_count, r_error, failure);
 	if (!failure.message.is_empty()) {
-		const bool captured = MochaVM::publish_nested_failure(failure, call_owner_id);
-		if (!captured && !failure.reported) {
-			const String failure_path = failure.path.is_empty() ? script->get_path() : failure.path;
-			String message = vformat("%s:%d:%d: %s: %s", failure_path, failure.span.line,
-					failure.span.column, failure.code, failure.message);
-			if (!failure.call_path.is_empty()) {
-				message += vformat(" (called from %s:%d:%d)", failure.call_path,
-						failure.call_span.line, failure.call_span.column);
-			}
-			UtilityFunctions::push_error(message);
-			failure.reported = true;
+		const bool captured = MochaVM::publish_nested_failure(failure, call_owner_id, p_method);
+		if (!captured) {
+			UtilityFunctions::push_error(MochaVM::format_failure(failure, script->get_path()));
 		}
 	}
 	return result;
 }
 
 void MochaScriptInstance::notification(int p_what, bool p_reversed) {
+	// Notifications are engine callbacks, not the direct result of an enclosing
+	// Variant::callp. Keep them from claiming that call's failure capture.
+	MochaNestedFailureShield failure_shield;
 	struct ActiveNotification {
 		MochaScriptInstance *instance;
 		explicit ActiveNotification(MochaScriptInstance *p_instance) : instance(p_instance) { instance->active_calls++; }

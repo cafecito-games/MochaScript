@@ -23,8 +23,18 @@ struct RuntimeFailure {
 	// First engine-mediated Mocha call that propagated this origin outward.
 	String call_path;
 	SourceSpan call_span;
-	bool reported = false;
 	bool preserve_call_error = false;
+};
+
+class MochaNestedFailureShield {
+	struct State;
+	State *state = nullptr;
+
+public:
+	MochaNestedFailureShield();
+	~MochaNestedFailureShield();
+	MochaNestedFailureShield(const MochaNestedFailureShield &) = delete;
+	MochaNestedFailureShield &operator=(const MochaNestedFailureShield &) = delete;
 };
 
 class MochaVM {
@@ -45,10 +55,12 @@ public:
 	static bool accepts(const Variant &p_value, const TypeRef &p_type, Variant &r_converted) {
 		return convert_value(p_value, p_type, r_converted);
 	}
+	static String format_failure(const RuntimeFailure &p_failure, const String &p_fallback_path);
 	// A script instance reached through a host `callp` reports a nested VM failure
 	// here so the outer VM frame cannot mistake its nil result for success. Capture
-	// matches the receiver identity, including calls routed through Object.call/callv.
-	static bool publish_nested_failure(const RuntimeFailure &p_failure, uint64_t p_owner_id);
+	// matches one receiver and expected dispatch, including Object.call/callv targets.
+	static bool publish_nested_failure(const RuntimeFailure &p_failure, uint64_t p_owner_id,
+			const StringName &p_method);
 };
 
 } // namespace mocha_script

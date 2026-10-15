@@ -54,10 +54,11 @@ reference to the script. Godot reaches it through `GDExtensionScriptInstanceInfo
 registration if any callback slot is absent. Calls enter `MochaVM`, which interprets Mocha bytecode
 and uses `Variant::callp` only for ordinary public Godot object methods. The VM has instruction and
 recursion limits shared across nested and engine-reentrant calls, and reports source-located
-`M4xxx` failures. Engine-mediated nested calls are captured by receiver identity, including
-`Object.call`/`callv`; propagation preserves the originating module and instruction while recording
-the first outer Mocha call site, and never exports inner argument-error metadata to an unrelated
-host call.
+`M4xxx` failures. Engine-mediated nested calls are captured by receiver identity plus the expected
+direct dispatch, including resolved `Object.call`/`callv` targets; unrelated notifications and
+callbacks cannot claim that capture. Propagation preserves the originating module and instruction
+while recording the first outer Mocha call site, and never exports inner argument-error metadata to
+an unrelated host call.
 
 The bootstrap has no tool scripts. In editor context a valid script therefore reports that it cannot
 instantiate, and Godot uses the placeholder-instance path; member initializers and user callbacks do

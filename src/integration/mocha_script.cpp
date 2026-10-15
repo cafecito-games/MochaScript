@@ -121,10 +121,9 @@ void *MochaScript::_instance_create(godot::Object *p_for_object) const {
 	lock.unlock();
 	RuntimeFailure failure;
 	if (MochaVM::initialize(*module, p_for_object, instance->members, failure) != godot::OK) {
-		const bool captured = MochaVM::publish_nested_failure(failure, instance_owner_id);
+		const bool captured = MochaVM::publish_nested_failure(failure, instance_owner_id, StringName());
 		if (!captured) {
-			godot::UtilityFunctions::push_error(godot::vformat("%s:%d:%d: %s: %s", get_path(), failure.span.line, failure.span.column, failure.code, failure.message));
-			failure.reported = true;
+			godot::UtilityFunctions::push_error(MochaVM::format_failure(failure, get_path()));
 		}
 		memdelete(instance);
 		return nullptr;
