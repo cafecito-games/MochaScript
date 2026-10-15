@@ -29,6 +29,7 @@ class MochaAnalyzer {
 	void analyze_block(std::vector<StmtPtr> &p_block, Context &r_context);
 	bool assignable(const TypeRef &p_target, const TypeRef &p_value) const;
 	String type_name(const TypeRef &p_type) const;
+	void validate_type(const TypeRef &p_type, const SourceSpan &p_span, const String &p_context);
 
 public:
 	Error analyze(Program &p_program, const String &p_path);

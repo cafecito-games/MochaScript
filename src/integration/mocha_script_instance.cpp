@@ -317,7 +317,9 @@ MochaScriptInstance *MochaScriptInstance::from_owner(const Object *p_owner) {
 			godot::gdextension_interface::object_get_script_instance(p_owner->_owner, language->_owner));
 }
 
-MochaScriptInstance::~MochaScriptInstance() = default;
+MochaScriptInstance::~MochaScriptInstance() {
+	if (script.is_valid()) script->notify_instance_freed(this);
+}
 
 bool MochaScriptInstance::set_property(const StringName &p_name, const Variant &p_value) {
 	if (script.is_null()) {
@@ -361,13 +363,18 @@ Variant MochaScriptInstance::call(const StringName &p_method, const Variant **p_
 		r_error.error = GDEXTENSION_CALL_ERROR_INSTANCE_IS_NULL;
 		return Variant();
 	}
-	const CompiledFunction *function = script->find_function(p_method);
+	const std::shared_ptr<CompiledModule> module = script->retain_compiled_module();
+	if (!module) {
+		r_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
+		return Variant();
+	}
+	const CompiledFunction *function = module->find_function(p_method);
 	if (function == nullptr) {
 		r_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
 		return Variant();
 	}
 	RuntimeFailure failure;
-	Variant result = MochaVM::call(*script->get_compiled_module(), *function, owner, members,
+	Variant result = MochaVM::call(*module, *function, owner, members,
 			p_arguments, p_argument_count, r_error, failure);
 	if (!failure.message.is_empty()) {
 		UtilityFunctions::push_error(vformat("%s:%d:%d: %s: %s", script->get_path(), failure.span.line,
@@ -383,7 +390,8 @@ void MochaScriptInstance::notification(int p_what, bool p_reversed) {
 	// Godot delivers a notification to the whole script chain; `p_reversed` names the direction the
 	// engine walked it in, and is passed on unchanged so a script can tell the two apart.
 	const StringName notification_name("_notification");
-	const CompiledFunction *function = script->find_function(notification_name);
+	const std::shared_ptr<CompiledModule> module = script->retain_compiled_module();
+	const CompiledFunction *function = module ? module->find_function(notification_name) : nullptr;
 	if (function == nullptr) {
 		return;
 	}

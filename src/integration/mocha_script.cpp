@@ -66,6 +66,7 @@ void MochaScript::collect_method_signatures(godot::Vector<godot::StringName> &r_
 		r_argument_counts.push_back(int(function.parameter_types.size()));
 	}
 }
+void MochaScript::notify_instance_freed(MochaScriptInstance *p_instance) { instances.erase(p_instance); }
 bool MochaScript::_editor_can_reload_from_file() { return true; }
 void MochaScript::_placeholder_erased(void *) {}
 bool MochaScript::_can_instantiate() const { return valid && compiled_module != nullptr; }
@@ -81,17 +82,22 @@ void *MochaScript::_instance_create(godot::Object *p_for_object) const {
 		godot::UtilityFunctions::push_error(godot::vformat("Cannot attach %s to %s; MochaScript extends %s.", get_path(), p_for_object->get_class(), godot::String(compiled_module->base_type)));
 		return nullptr;
 	}
+	const std::shared_ptr<CompiledModule> module = compiled_module;
 	auto *instance = memnew(MochaScriptInstance);
 	instance->owner = p_for_object;
 	instance->script = godot::Ref<MochaScript>(const_cast<MochaScript *>(this));
 	RuntimeFailure failure;
-	if (MochaVM::initialize(*compiled_module, p_for_object, instance->members, failure) != godot::OK) {
+	if (MochaVM::initialize(*module, p_for_object, instance->members, failure) != godot::OK) {
 		godot::UtilityFunctions::push_error(godot::vformat("%s:%d:%d: %s: %s", get_path(), failure.span.line, failure.span.column, failure.code, failure.message));
 		memdelete(instance);
 		return nullptr;
 	}
+	const_cast<MochaScript *>(this)->instances.insert(instance);
 	void *handle = godot::gdextension_interface::script_instance_create3(MochaScriptInstance::get_vtable(), instance);
-	if (handle == nullptr) memdelete(instance);
+	if (handle == nullptr) {
+		const_cast<MochaScript *>(this)->instances.erase(instance);
+		memdelete(instance);
+	}
 	return handle;
 }
 void *MochaScript::_placeholder_instance_create(godot::Object *p_for_object) const {
@@ -104,14 +110,14 @@ bool MochaScript::_has_source_code() const { return true; }
 godot::String MochaScript::_get_source_code() const { return source_code; }
 void MochaScript::_set_source_code(const godot::String &p_code) {
 	source_code = p_code;
-	valid = false;
 	token_count = 0;
 	diagnostics.clear();
-	program.reset();
-	compiled_module.reset();
 }
 
 godot::Error MochaScript::_reload(bool) {
+	if (!instances.is_empty()) {
+		return godot::ERR_ALREADY_IN_USE;
+	}
 	valid = true;
 	token_count = 0;
 	diagnostics.clear();
@@ -240,6 +246,9 @@ godot::TypedArray<godot::StringName> MochaScript::_get_members() const {
 }
 bool MochaScript::_is_placeholder_fallback_enabled() const { return false; }
 godot::Variant MochaScript::_get_rpc_config() const { return godot::Dictionary(); }
-bool MochaScript::_instance_has(godot::Object *p_object) const { return MochaScriptInstance::from_owner(p_object) != nullptr; }
+bool MochaScript::_instance_has(godot::Object *p_object) const {
+	MochaScriptInstance *instance = MochaScriptInstance::from_owner(p_object);
+	return instance != nullptr && instance->script.ptr() == this;
+}
 
 } // namespace mocha_script

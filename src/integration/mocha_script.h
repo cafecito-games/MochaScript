@@ -12,6 +12,7 @@
 
 #include <godot_cpp/classes/script_extension.hpp>
 #include <godot_cpp/classes/script_language.hpp>
+#include <godot_cpp/templates/hash_set.hpp>
 
 namespace mocha_script {
 
@@ -24,6 +25,7 @@ class MochaScript final : public godot::ScriptExtension {
 	godot::TypedArray<godot::Dictionary> diagnostics;
 	std::shared_ptr<Program> program;
 	std::shared_ptr<CompiledModule> compiled_module;
+	mutable godot::HashSet<class MochaScriptInstance *> instances;
 
 protected:
 	static void _bind_methods();
@@ -34,6 +36,7 @@ public:
 	bool is_compilation_valid() const;
 	const Program *get_program() const { return program.get(); }
 	const CompiledModule *get_compiled_module() const { return compiled_module.get(); }
+	std::shared_ptr<CompiledModule> retain_compiled_module() const { return compiled_module; }
 	const CompiledFunction *find_function(const godot::StringName &p_name) const;
 	int64_t get_member_index(const godot::StringName &p_name) const;
 	int64_t get_member_count() const;
@@ -41,6 +44,7 @@ public:
 	const TypeRef *get_member_type(int64_t p_index) const;
 	godot::Variant::Type get_member_carrier(int64_t p_index) const;
 	void collect_method_signatures(godot::Vector<godot::StringName> &r_names, godot::Vector<int> &r_argument_counts) const;
+	void notify_instance_freed(MochaScriptInstance *p_instance);
 
 	bool _editor_can_reload_from_file() override;
 	void _placeholder_erased(void *p_placeholder) override;

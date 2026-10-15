@@ -45,11 +45,47 @@ godot::PackedStringArray MochaNativeTests::run() const {
 	const godot::String executable =
 			"extends RefCounted\n"
 			"var seed: int = 2\n"
+			"var default_int: int\n"
+			"var default_float: float\n"
+			"var default_string: String\n"
+			"var default_array: Array\n"
+			"var target = null\n"
+			"var touched: int\n"
 			"func add(value: int) -> int:\n"
 			"\tvar numbers: Array = [value, seed]\n"
 			"\tif numbers[0] > 0:\n"
 			"\t\treturn numbers[0] + numbers[1]\n"
-			"\treturn 0\n";
+			"\treturn 0\n"
+			"func half() -> float:\n"
+			"\tvar value: float = 1\n"
+			"\treturn value / 2.0\n"
+			"func mark() -> bool:\n"
+			"\ttouched += 1\n"
+			"\treturn true\n"
+			"func short_and() -> bool:\n"
+			"\treturn false and mark()\n"
+			"func short_or() -> bool:\n"
+			"\treturn true or mark()\n"
+			"func scoped(flag: bool) -> int:\n"
+			"\tif flag:\n"
+			"\t\tvar seed: int = 99\n"
+			"\treturn seed\n"
+			"func set_target(value: Variant) -> Variant:\n"
+			"\ttarget = value\n"
+			"\treturn target\n"
+			"func missing(flag: bool) -> int:\n"
+			"\tif flag:\n"
+			"\t\treturn 1\n"
+			"func not_rule() -> bool:\n"
+			"\treturn not 1 == 1\n"
+			"func dynamic_store() -> String:\n"
+			"\tvar value: String = get_instance_id()\n"
+			"\treturn value\n"
+			"func class_text() -> String:\n"
+			"\tvar value: String = get_class()\n"
+			"\treturn value\n"
+			"func recurse() -> int:\n"
+			"\treturn recurse()\n";
 	Program program;
 	MochaParser parser;
 	if (parser.parse(executable, "res://native_pipeline.mocha", program) != godot::OK) {
@@ -71,16 +107,57 @@ godot::PackedStringArray MochaNativeTests::run() const {
 				if (MochaVM::initialize(*module, owner.ptr(), members, failure) != godot::OK) {
 					failures.push_back("vm: member initialization failed: " + failure.message);
 				} else {
-					const CompiledFunction *function = module->find_function("add");
-					const godot::Variant argument = int64_t(40);
-					const godot::Variant *arguments[] = { &argument };
+					auto invoke = [&](const godot::StringName &p_name, const std::vector<godot::Variant> &p_values,
+							GDExtensionCallError &r_error, RuntimeFailure &r_failure) {
+						std::vector<const godot::Variant *> pointers;
+						for (const godot::Variant &value : p_values) pointers.push_back(&value);
+						return MochaVM::call(*module, *module->find_function(p_name), owner.ptr(), members,
+								pointers.data(), int(pointers.size()), r_error, r_failure);
+					};
 					GDExtensionCallError call_error;
-					const godot::Variant result = MochaVM::call(*module, *function, owner.ptr(), members, arguments, 1, call_error, failure);
+					godot::Variant result = invoke("add", { int64_t(40) }, call_error, failure);
 					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(int64_t(42))) {
 						failures.push_back(godot::vformat("vm: expected 42, received %s", result));
 					}
+					if (members[module->find_member("default_int")].get_type() != godot::Variant::INT ||
+							members[module->find_member("default_float")].get_type() != godot::Variant::FLOAT ||
+							members[module->find_member("default_string")].get_type() != godot::Variant::STRING ||
+							members[module->find_member("default_array")].get_type() != godot::Variant::ARRAY) {
+						failures.push_back("vm: typed declaration defaults have incorrect carriers");
+					}
+					result = invoke("half", {}, call_error, failure);
+					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(0.5)) failures.push_back("vm: local int-to-float widening failed");
+					result = invoke("short_and", {}, call_error, failure);
+					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(false)) failures.push_back("compiler: short-circuit and failed");
+					result = invoke("short_or", {}, call_error, failure);
+					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(true) || int64_t(members[module->find_member("touched")]) != 0) failures.push_back("compiler: logical operators evaluated the guarded call");
+					result = invoke("scoped", { true }, call_error, failure);
+					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(int64_t(2))) failures.push_back("compiler: block local leaked over member resolution");
+					result = invoke("set_target", { int64_t(7) }, call_error, failure);
+					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(int64_t(7))) failures.push_back("analyzer: null inference did not remain Variant");
+					result = invoke("not_rule", {}, call_error, failure);
+					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(false)) failures.push_back("parser: 'not' comparison precedence is incorrect");
+					result = invoke("class_text", {}, call_error, failure);
+					if (call_error.error != GDEXTENSION_CALL_OK || result.get_type() != godot::Variant::STRING) failures.push_back("vm: StringName was not converted for a String local");
+					invoke("dynamic_store", {}, call_error, failure);
+					if (call_error.error == GDEXTENSION_CALL_OK || failure.message.is_empty()) failures.push_back("vm: dynamically wrong typed local store succeeded");
+					invoke("missing", { false }, call_error, failure);
+					if (call_error.error == GDEXTENSION_CALL_OK || failure.message.is_empty()) failures.push_back("vm: typed function fell off the end successfully");
+					invoke("recurse", {}, call_error, failure);
+					if (call_error.error == GDEXTENSION_CALL_OK || !failure.message.contains("depth")) failures.push_back("vm: recursion limit did not propagate as a call failure");
 				}
 			}
+		}
+	}
+
+	{
+		Program invalid;
+		MochaParser invalid_parser;
+		invalid_parser.parse("var value: DefinitelyNotAClass\n", "res://native_unknown_type.mocha", invalid);
+		MochaAnalyzer analyzer;
+		if (analyzer.analyze(invalid, "res://native_unknown_type.mocha") != godot::ERR_COMPILATION_FAILED ||
+				analyzer.get_diagnostics().empty() || analyzer.get_diagnostics()[0].code != "M2024") {
+			failures.push_back("analyzer: unknown object type did not produce M2024");
 		}
 	}
 

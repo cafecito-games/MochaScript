@@ -356,7 +356,18 @@ ExprPtr MochaParser::parse_expression(int p_min_precedence) {
 }
 
 ExprPtr MochaParser::parse_unary() {
-	if (match(Token::NOT) || match(Token::BANG) || match(Token::MINUS) || match(Token::PLUS) || match(Token::TILDE)) {
+	if (match(Token::NOT)) {
+		const Token operation = previous();
+		// Word-form `not` binds below equality/comparison/containment but above
+		// `and`; symbolic `!` remains a conventional high-precedence unary.
+		ExprPtr operand = parse_expression(3);
+		if (!operand) return {};
+		auto result = expression(ExprKind::UNARY, merge_span(span_from_token(operation), operand->span));
+		result->operation = operation.type;
+		result->right = operand;
+		return result;
+	}
+	if (match(Token::BANG) || match(Token::MINUS) || match(Token::PLUS) || match(Token::TILDE)) {
 		const Token operation = previous();
 		ExprPtr operand = parse_unary();
 		if (!operand) return {};

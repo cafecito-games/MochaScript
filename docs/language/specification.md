@@ -32,6 +32,12 @@ Declared member, parameter, local, and return types are checked. `int` widens to
 `Variant` results remain dynamically checked at the storage or return boundary. Wrong external
 argument types and wrong runtime stores fail explicitly.
 
+Typed declarations without an initializer receive carrier defaults (`false`, `0`, `0.0`, empty
+`String`, empty `Array`, empty `Dictionary`, or `null` for objects). An untyped `null` initializer
+remains `Variant` instead of creating an unusable null-only type. `and`/`or` and `&&`/`||`
+short-circuit. Word-form `not` binds below comparison/containment and above `and`; symbolic `!`
+remains a high-precedence unary operator.
+
 ## Unsupported now
 
 Classes, inheritance between scripts, constants, enums, signals, annotations, exports, properties,

@@ -22,6 +22,7 @@ enum class OpCode {
 	MAKE_DICTIONARY,
 	GET_INDEX,
 	GET_NAMED,
+	BOOLEANIZE,
 	UNARY,
 	BINARY,
 	CALL_SELF,
@@ -45,6 +46,7 @@ struct CompiledFunction {
 	StringName name;
 	std::vector<StringName> parameter_names;
 	std::vector<TypeRef> parameter_types;
+	std::vector<TypeRef> local_types;
 	TypeRef return_type;
 	int64_t local_count = 0;
 	std::vector<Instruction> code;

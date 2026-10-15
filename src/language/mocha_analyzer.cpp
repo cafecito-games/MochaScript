@@ -7,6 +7,8 @@
 
 #include "language/mocha_analyzer.h"
 
+#include <godot_cpp/core/class_db.hpp>
+
 namespace mocha_script {
 
 namespace {
@@ -65,6 +67,13 @@ bool MochaAnalyzer::assignable(const TypeRef &p_target, const TypeRef &p_value) 
 	if (p_value.kind == TypeKind::NIL) return p_target.kind == TypeKind::OBJECT || p_target.kind == TypeKind::NIL;
 	if (p_target.kind == TypeKind::FLOAT && p_value.kind == TypeKind::INT) return true;
 	return p_target.kind == p_value.kind;
+}
+
+void MochaAnalyzer::validate_type(const TypeRef &p_type, const SourceSpan &p_span, const String &p_context) {
+	if (p_type.kind == TypeKind::OBJECT &&
+			(p_type.name.is_empty() || !ClassDB::class_exists(p_type.name))) {
+		report(p_span, "M2024", vformat("Unknown or unsupported object type '%s' %s.", String(p_type.name), p_context));
+	}
 }
 
 TypeRef MochaAnalyzer::analyze_expression(ExprPtr &p_expression, Context &r_context) {
@@ -191,8 +200,11 @@ void MochaAnalyzer::analyze_statement(StmtPtr &p_statement, Context &r_context) 
 				report(p_statement->span, "M2010", vformat("Local '%s' is already declared.", String(p_statement->name)));
 				break;
 			}
-			TypeRef value = p_statement->expression ? analyze_expression(p_statement->expression, r_context) : TypeRef::make(TypeKind::NIL, "null");
-			TypeRef type = p_statement->declared_type.kind == TypeKind::ANY ? value : p_statement->declared_type;
+			TypeRef value = p_statement->expression ? analyze_expression(p_statement->expression, r_context) : TypeRef::any();
+			TypeRef type = p_statement->declared_type;
+			if (type.kind == TypeKind::ANY && value.kind != TypeKind::NIL && value.kind != TypeKind::VOID) type = value;
+			p_statement->declared_type = type;
+			validate_type(type, p_statement->span, vformat("for local '%s'", String(p_statement->name)));
 			if (p_statement->expression && !assignable(type, value)) {
 				report(p_statement->span, "M2011", vformat("Cannot initialize '%s' of type %s with %s.", String(p_statement->name), type_name(type), type_name(value)));
 			}
@@ -248,9 +260,13 @@ Error MochaAnalyzer::analyze(Program &p_program, const String &p_path) {
 	path = p_path.is_empty() ? String("<memory>") : p_path;
 	members.clear();
 	diagnostics.clear();
+	if (!ClassDB::class_exists(p_program.base_type)) {
+		report({}, "M2025", vformat("Unknown or unsupported base class '%s'.", String(p_program.base_type)));
+	}
 
 	HashMap<StringName, bool> functions;
 	for (MemberDecl &member : p_program.members) {
+		validate_type(member.type, member.span, vformat("for member '%s'", String(member.name)));
 		if (members.has(member.name)) {
 			report(member.span, "M2020", vformat("Member '%s' is already declared.", String(member.name)));
 		} else {
@@ -266,7 +282,7 @@ Error MochaAnalyzer::analyze(Program &p_program, const String &p_path) {
 	for (MemberDecl &member : p_program.members) {
 		if (!member.initializer) continue;
 		const TypeRef value = analyze_expression(member.initializer, member_context);
-		if (member.type.kind == TypeKind::ANY) {
+		if (member.type.kind == TypeKind::ANY && value.kind != TypeKind::NIL && value.kind != TypeKind::VOID) {
 			member.type = value;
 			members[member.name] = value;
 		} else if (!assignable(member.type, value)) {
@@ -277,7 +293,9 @@ Error MochaAnalyzer::analyze(Program &p_program, const String &p_path) {
 	for (FunctionDecl &function : p_program.functions) {
 		Context context;
 		context.return_type = function.return_type;
+		validate_type(function.return_type, function.span, vformat("as the return type of '%s'", String(function.name)));
 		for (const Parameter &parameter : function.parameters) {
+			validate_type(parameter.type, parameter.span, vformat("for parameter '%s'", String(parameter.name)));
 			if (context.locals.has(parameter.name)) report(parameter.span, "M2023", vformat("Parameter '%s' is declared more than once.", String(parameter.name)));
 			else context.locals.insert(parameter.name, parameter.type);
 		}

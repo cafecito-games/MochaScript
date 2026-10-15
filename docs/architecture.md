@@ -32,15 +32,18 @@ integration boundary.
 
 ## Execution and ownership
 
-`MochaScript::_reload()` is transactional: it clears old state, tokenizes, parses, analyzes, and
-compiles in order. No executable module is published after an error. `can_instantiate()` becomes
-true only when a complete `CompiledModule` exists.
+`MochaScript::_reload()` is transactional: it tokenizes, parses, analyzes, and compiles in order,
+then publishes one complete module. No executable module is published after an error.
+`can_instantiate()` becomes true only when a complete `CompiledModule` exists. Reload is refused
+with `ERR_ALREADY_IN_USE` while an instance is alive; this prevents bytecode and member-layout
+replacement beneath active frames. Each VM call also retains its module for the complete frame.
 
 Each attached object receives a `MochaScriptInstance` containing its own member vector and a strong
 reference to the script. Godot reaches it through `GDExtensionScriptInstanceInfo3`; startup refuses
 registration if any callback slot is absent. Calls enter `MochaVM`, which interprets Mocha bytecode
 and uses `Variant::callp` only for ordinary public Godot object methods. The VM has instruction and
-recursion limits and reports source-located `M4xxx` failures.
+recursion limits shared across nested and engine-reentrant calls, and reports source-located
+`M4xxx` failures.
 
 ## Diagnostics
 

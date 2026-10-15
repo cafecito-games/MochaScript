@@ -10,6 +10,8 @@ func _initialize() -> void:
 		var host := Node.new()
 		host.name = "MochaHost"
 		host.set_script(script)
+		if script.reload() != ERR_ALREADY_IN_USE:
+			failures.append("reload was not refused while a live MochaScript instance existed")
 		if host.get_script() != script:
 			failures.append("MochaScript did not attach to the Godot Node")
 		elif not host.has_method("compute"):

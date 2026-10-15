@@ -7,7 +7,32 @@
 
 #include "language/mocha_compiler.h"
 
+#include <godot_cpp/variant/array.hpp>
+#include <godot_cpp/variant/dictionary.hpp>
+
 namespace mocha_script {
+
+namespace {
+
+Variant default_value(const TypeRef &p_type) {
+	switch (p_type.kind) {
+		case TypeKind::BOOL: return false;
+		case TypeKind::INT: return int64_t(0);
+		case TypeKind::FLOAT: return 0.0;
+		case TypeKind::STRING: return String();
+		case TypeKind::ARRAY: return Array();
+		case TypeKind::DICTIONARY: return Dictionary();
+		default: return Variant();
+	}
+}
+
+HashMap<StringName, int64_t> copy_locals(const HashMap<StringName, int64_t> &p_source) {
+	HashMap<StringName, int64_t> result;
+	for (const KeyValue<StringName, int64_t> &entry : p_source) result.insert(entry.key, entry.value);
+	return result;
+}
+
+} // namespace
 
 void MochaCompiler::report(const SourceSpan &p_span, const String &p_code, const String &p_message) {
 	diagnostics.push_back({ p_code, p_message, path, p_span });
@@ -74,6 +99,32 @@ void MochaCompiler::compile_expression(const ExprPtr &p_expression) {
 			function->code[index].operation = p_expression->operation;
 		} break;
 		case ExprKind::BINARY: {
+			const bool logical_and = p_expression->operation == MochaTokenizer::Token::AND ||
+					p_expression->operation == MochaTokenizer::Token::AMPERSAND_AMPERSAND;
+			const bool logical_or = p_expression->operation == MochaTokenizer::Token::OR ||
+					p_expression->operation == MochaTokenizer::Token::PIPE_PIPE;
+			if (logical_and || logical_or) {
+				compile_expression(p_expression->left);
+				const int64_t branch = emit(OpCode::JUMP_IF_FALSE, p_expression->left->span);
+				if (logical_or) {
+					emit(OpCode::PUSH_CONSTANT, p_expression->span);
+					function->code.back().operand = true;
+					const int64_t jump_end = emit(OpCode::JUMP, p_expression->span);
+					function->code[branch].argument = int64_t(function->code.size());
+					compile_expression(p_expression->right);
+					emit(OpCode::BOOLEANIZE, p_expression->right->span);
+					function->code[jump_end].argument = int64_t(function->code.size());
+				} else {
+					compile_expression(p_expression->right);
+					emit(OpCode::BOOLEANIZE, p_expression->right->span);
+					const int64_t jump_end = emit(OpCode::JUMP, p_expression->span);
+					function->code[branch].argument = int64_t(function->code.size());
+					emit(OpCode::PUSH_CONSTANT, p_expression->span);
+					function->code.back().operand = false;
+					function->code[jump_end].argument = int64_t(function->code.size());
+				}
+				break;
+			}
 			if (p_expression->operation == MochaTokenizer::Token::IS) {
 				report(p_expression->span, "M3090", "The 'is' operator is recognized but not executable in this bootstrap.");
 				emit(OpCode::PUSH_CONSTANT, p_expression->span);
@@ -118,7 +169,13 @@ void MochaCompiler::compile_statement(const StmtPtr &p_statement) {
 		case StatementKind::VARIABLE: {
 			const int64_t local = function->local_count++;
 			locals.insert(p_statement->name, local);
-			compile_expression(p_statement->expression);
+			function->local_types.push_back(p_statement->declared_type);
+			if (p_statement->expression) {
+				compile_expression(p_statement->expression);
+			} else {
+				const int64_t value = emit(OpCode::PUSH_CONSTANT, p_statement->span);
+				function->code[value].operand = default_value(p_statement->declared_type);
+			}
 			emit(OpCode::STORE_LOCAL, p_statement->span, local);
 		} break;
 		case StatementKind::EXPRESSION:
@@ -153,17 +210,22 @@ void MochaCompiler::compile_statement(const StmtPtr &p_statement) {
 		case StatementKind::IF: {
 			compile_expression(p_statement->expression);
 			const int64_t jump_false = emit(OpCode::JUMP_IF_FALSE, p_statement->span);
+			const HashMap<StringName, int64_t> outer_locals = copy_locals(locals);
 			compile_block(p_statement->body);
+			locals = copy_locals(outer_locals);
 			const int64_t jump_end = emit(OpCode::JUMP, p_statement->span);
 			function->code[jump_false].argument = int64_t(function->code.size());
 			compile_block(p_statement->else_body);
+			locals = copy_locals(outer_locals);
 			function->code[jump_end].argument = int64_t(function->code.size());
 		} break;
 		case StatementKind::WHILE: {
 			const int64_t loop_start = int64_t(function->code.size());
 			compile_expression(p_statement->expression);
 			const int64_t jump_end = emit(OpCode::JUMP_IF_FALSE, p_statement->span);
+			const HashMap<StringName, int64_t> outer_locals = copy_locals(locals);
 			compile_block(p_statement->body);
+			locals = copy_locals(outer_locals);
 			emit(OpCode::JUMP, p_statement->span, loop_start);
 			function->code[jump_end].argument = int64_t(function->code.size());
 		} break;
@@ -186,12 +248,13 @@ void MochaCompiler::compile_function(const FunctionDecl &p_function, CompiledFun
 		locals.insert(parameter.name, local);
 		r_function.parameter_names.push_back(parameter.name);
 		r_function.parameter_types.push_back(parameter.type);
+		r_function.local_types.push_back(parameter.type);
 	}
 	compile_block(p_function.body);
-	if (r_function.code.empty() || r_function.code.back().opcode != OpCode::RETURN) {
-		emit(OpCode::PUSH_CONSTANT, p_function.span);
-		emit(OpCode::RETURN, p_function.span);
-	}
+	// Always append a checked implicit return. Branches emitted before this point
+	// may jump to the old end even when another branch ended in RETURN.
+	emit(OpCode::PUSH_CONSTANT, p_function.span);
+	emit(OpCode::RETURN, p_function.span);
 }
 
 Error MochaCompiler::compile(const Program &p_program, const String &p_path, std::shared_ptr<CompiledModule> &r_module) {
@@ -210,7 +273,12 @@ Error MochaCompiler::compile(const Program &p_program, const String &p_path, std
 	function->return_type = TypeRef::make(TypeKind::VOID, "void");
 	locals.clear();
 	for (size_t index = 0; index < p_program.members.size(); ++index) {
-		compile_expression(p_program.members[index].initializer);
+		if (p_program.members[index].initializer) {
+			compile_expression(p_program.members[index].initializer);
+		} else {
+			const int64_t value = emit(OpCode::PUSH_CONSTANT, p_program.members[index].span);
+			function->code[value].operand = default_value(p_program.members[index].type);
+		}
 		emit(OpCode::STORE_MEMBER, p_program.members[index].span, int64_t(index));
 	}
 	emit(OpCode::PUSH_CONSTANT, {});
