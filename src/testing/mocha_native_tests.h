@@ -22,6 +22,7 @@ protected:
 	bool shielded_failure_probe() const;
 	bool initializer_mismatch_probe() const;
 	bool opaque_callable_probe() const;
+	bool opaque_bound_callable_probe(const godot::Variant &p_value) const;
 	int64_t get_shielded_value() const;
 
 public:

@@ -566,16 +566,33 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				if (receiver.get_type() == Variant::CALLABLE &&
 						(instruction.name == names.call || instruction.name == names.callv)) {
 					const Callable callable = receiver;
-					const bool identifiable_target = callable.is_standard() ||
-							callable.get_bound_arguments_count() != 0 ||
-							callable.get_unbound_arguments_count() != 0;
-					if (identifiable_target) {
+					if (callable.is_standard()) {
 						receiver_id = uint64_t(callable.get_object_id());
 						expected_method = callable.get_method();
 						capture_host_failure = !expected_method.is_empty();
+						Variant forwarded_first_argument;
+						bool has_forwarded_first_argument = false;
+						if (instruction.name == names.call && !values.empty()) {
+							forwarded_first_argument = values[0];
+							has_forwarded_first_argument = true;
+						} else if (instruction.name == names.callv && values.size() == 1 &&
+								values[0].get_type() == Variant::ARRAY) {
+							const Array forwarded_arguments = values[0];
+							if (!forwarded_arguments.is_empty()) {
+								forwarded_first_argument = forwarded_arguments[0];
+								has_forwarded_first_argument = true;
+							}
+						}
+						if ((expected_method == names.call || expected_method == names.callv) &&
+								has_forwarded_first_argument &&
+								(forwarded_first_argument.get_type() == Variant::STRING ||
+										forwarded_first_argument.get_type() == Variant::STRING_NAME)) {
+							alternate_method = StringName(forwarded_first_argument);
+						}
 					} else {
-						// An opaque Callable has no stable method identity. Shield it so a
-						// reentrant callback on the same owner cannot claim this dispatch.
+						// GDExtension cannot safely recover the ultimate target method from
+						// custom wrappers, including bound and unbound callables. Shield them
+						// so a reentrant callback cannot claim this dispatch.
 						capture_host_failure = false;
 					}
 				} else if ((instruction.name == names.call || instruction.name == names.callv) &&
