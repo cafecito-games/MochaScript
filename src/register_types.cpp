@@ -12,7 +12,9 @@
 #include "integration/mocha_script_resource_loader.h"
 #include "integration/mocha_script_resource_saver.h"
 #include "integration/mocha_script_instance.h"
+#ifdef DEBUG_ENABLED
 #include "testing/mocha_native_tests.h"
+#endif
 
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
@@ -43,7 +45,9 @@ void initialize_mocha_script(godot::ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(mocha_script::MochaScript);
 	GDREGISTER_CLASS(mocha_script::MochaScriptResourceLoader);
 	GDREGISTER_CLASS(mocha_script::MochaScriptResourceSaver);
+#ifdef DEBUG_ENABLED
 	GDREGISTER_CLASS(mocha_script::MochaNativeTests);
+#endif
 
 	language = memnew(mocha_script::MochaScriptLanguage);
 	const godot::Error registration_error = godot::Engine::get_singleton()->register_script_language(language);

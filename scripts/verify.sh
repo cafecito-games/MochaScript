@@ -20,6 +20,48 @@ for library in \
     fi
 done
 
+python3 - "$repo_root/project/bin/linux/libmocha_script.linux.template_release.x86_64.so" <<'PY'
+import ctypes
+import sys
+
+library = ctypes.CDLL(sys.argv[1])
+getattr(library, "mocha_script_library_init")
+PY
+
+validate_uid_state() {
+    local script_resource
+    while IFS= read -r script_resource; do
+        case "$script_resource" in
+            *.gd|*.mocha|*.gdextension)
+                if ! git -C "$repo_root" ls-files --error-unmatch "${script_resource}.uid" >/dev/null 2>&1; then
+                    echo "Tracked script resource is missing its committed UID sidecar: ${script_resource}.uid" >&2
+                    return 1
+                fi
+                ;;
+        esac
+    done < <(git -C "$repo_root" ls-files project)
+
+    local untracked_uids
+    untracked_uids=$(git -C "$repo_root" ls-files --others --exclude-standard -- '*.uid')
+    if [[ -n "$untracked_uids" ]]; then
+        echo "Godot generated untracked UID sidecars; commit them for stable resource identity:" >&2
+        printf '%s\n' "$untracked_uids" >&2
+        return 1
+    fi
+}
+
+snapshot_tracked_uids() {
+    local uid_path
+    while IFS= read -r uid_path; do
+        sha256sum "$repo_root/$uid_path"
+    done < <(git -C "$repo_root" ls-files 'project/*.uid' 'project/**/*.uid')
+}
+
+validate_uid_state
+uid_snapshot_before="$log_dir/uids-before.sha256"
+uid_snapshot_after="$log_dir/uids-after.sha256"
+snapshot_tracked_uids >"$uid_snapshot_before"
+
 editor_log="$log_dir/editor-import.log"
 editor_test_log="$log_dir/editor-test.log"
 recognition_log="$log_dir/recognition.log"
@@ -118,26 +160,16 @@ if grep -Eiq 'SCRIPT ERROR|ERROR:|crash|segmentation fault' "$editor_log" "$reco
     exit 1
 fi
 
-while IFS= read -r script_resource; do
-    case "$script_resource" in
-        *.gd|*.mocha|*.gdextension)
-            if ! git -C "$repo_root" ls-files --error-unmatch "${script_resource}.uid" >/dev/null 2>&1; then
-                echo "Tracked script resource is missing its committed UID sidecar: ${script_resource}.uid" >&2
-                exit 1
-            fi
-            ;;
-    esac
-done < <(git -C "$repo_root" ls-files project)
-
-untracked_uids=$(git -C "$repo_root" ls-files --others --exclude-standard -- '*.uid')
-if [[ -n "$untracked_uids" ]]; then
-    echo "Godot generated untracked UID sidecars; commit them for stable resource identity:" >&2
-    printf '%s\n' "$untracked_uids" >&2
+validate_uid_state
+snapshot_tracked_uids >"$uid_snapshot_after"
+if ! cmp -s "$uid_snapshot_before" "$uid_snapshot_after"; then
+    echo "Godot rewrote a tracked UID sidecar during editor import:" >&2
+    diff -u "$uid_snapshot_before" "$uid_snapshot_after" >&2 || true
     exit 1
 fi
 
 rm -f -- "$editor_log" "$editor_test_log" "$recognition_log" "$tokenizer_log" "$frontend_log" \
-    "$execution_log" "$native_log" "$bootstrap_corpus_log"
+    "$execution_log" "$native_log" "$bootstrap_corpus_log" "$uid_snapshot_before" "$uid_snapshot_after"
 rm -rf -- "$log_dir/data" "$log_dir/config" "$log_dir/cache"
 rmdir -- "$log_dir"
 echo "MOCHA_VERIFY_OK"

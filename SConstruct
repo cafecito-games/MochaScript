@@ -50,10 +50,15 @@ sources = (
     + Glob("src/language/*.cpp")
     + Glob("src/platform/*.cpp")
     + Glob("src/runtime/*.cpp")
-    + Glob("src/testing/*.cpp")
 )
+if env["target"] != "template_release":
+    sources += Glob("src/testing/*.cpp")
 
 suffix = env["suffix"].replace(".dev", "").replace(".universal", "")
+# Keep each target's extension objects alongside one another. Without a
+# target-qualified suffix, alternating debug and release recompiles the same
+# `src/*.os` paths with different flags on every invocation.
+env["SHOBJSUFFIX"] = suffix + env["SHOBJSUFFIX"]
 lib_filename = "{}{}{}{}".format(
     env.subst("$SHLIBPREFIX"), libname, suffix, env.subst("$SHLIBSUFFIX")
 )

@@ -7,8 +7,9 @@ Run the complete local suite with:
 ```
 
 It validates immutable pins, uses the cgroup CPU quota with a four-job ceiling, builds debug and
-release extension libraries, imports the fixture project, and runs these isolated sentinels exactly
-once:
+release extension libraries with target-specific object caches, load-probes the release library and
+its entry symbol, imports the fixture project, and runs these isolated sentinels exactly once. The
+native C++ test harness is registered only in debug builds and is excluded from the release library.
 
 - `MOCHA_RECOGNITION_OK`: language/resource identity and source preservation;
 - `MOCHA_EDITOR_OK`: non-tool scripts use placeholders and cannot instantiate in editor context,
@@ -37,5 +38,5 @@ is embedded in the repository.
 
 Godot resource identities are repository state. Every tracked `.gd`, `.mocha`, and `.gdextension`
 file under `project/` must have its generated `.uid` sidecar committed. The canonical verifier fails
-when one is missing or when an import leaves any untracked UID sidecar, so contributors should add
-new source resources and their sidecars together.
+when one is missing, when an import leaves any untracked UID sidecar, or when editor import rewrites
+a tracked sidecar. Contributors should add new source resources and their sidecars together.
