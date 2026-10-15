@@ -95,7 +95,7 @@ if [[ "$bootstrap_sentinel_count" != "1" ]]; then
 fi
 
 editor_test_errors=$(grep -Ei 'SCRIPT ERROR|ERROR:|crash|segmentation fault' "$editor_test_log" |
-    grep -Ev "^ERROR: [0-9]+ RID allocations of type '.*' were leaked at exit\.$" || true)
+    grep -Ev "^ERROR: [0-9]+ RID allocations of type '(N16RendererViewport8ViewportE|PN13RendererDummy14TextureStorage12DummyTextureE|N17RendererSceneCull8ScenarioE|PN18TextServerAdvanced22ShapedTextDataAdvancedE|PN18TextServerAdvanced12FontAdvancedE)' were leaked at exit\.$" || true)
 if [[ -n "$editor_test_errors" ]]; then
     echo "Godot emitted an unexpected error during editor-context verification" >&2
     printf '%s\n' "$editor_test_errors" >&2

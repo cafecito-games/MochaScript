@@ -20,8 +20,10 @@ imports the fixture project, and runs these isolated sentinels exactly once:
   parity);
 - `MOCHA_VERIFY_OK`: the aggregate result.
 
-Any timeout, crash, engine error, missing or duplicate sentinel, unexpected diagnostic, or nonzero
-exit fails verification. Logs are written under the user's cache rather than the repository.
+Any timeout, crash, unexpected engine error, missing or duplicate sentinel, unexpected diagnostic,
+or nonzero exit fails verification. The pinned engine's headless editor-script teardown emits five
+known renderer/text RID allocation errors; only those exact RID types are allowlisted for the editor
+placeholder test. Logs are written under the user's cache rather than the repository.
 
 Linux CI reads the private release repository, immutable asset ID, and SHA-256 from
 `upstream.lock.json`, then verifies the archive before execution. Configure

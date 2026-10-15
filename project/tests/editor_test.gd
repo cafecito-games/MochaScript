@@ -10,6 +10,14 @@ func _initialize() -> void:
 		failures.append("example.mocha was not a valid MochaScript in editor context")
 	elif script.can_instantiate():
 		failures.append("non-tool MochaScript can instantiate in editor context")
+	else:
+		var host := Node.new()
+		host.set_script(script)
+		if host.get_script() != script:
+			failures.append("editor did not attach the MochaScript placeholder")
+		if host.get(&"total") == 1:
+			failures.append("editor attachment ran the MochaScript member initializer")
+		host.free()
 
 	if failures.is_empty():
 		print("MOCHA_EDITOR_OK")
