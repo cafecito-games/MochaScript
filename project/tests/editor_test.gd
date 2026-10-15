@@ -65,6 +65,15 @@ func _initialize() -> void:
 		var loaded_bom := ResourceLoader.load(bom_path, "", ResourceLoader.CACHE_MODE_IGNORE) as MochaScript
 		if loaded_bom == null or not loaded_bom.is_compilation_valid() or loaded_bom.get_source_code() != bom_source or ResourceSaver.save(loaded_bom, bom_path) != OK or FileAccess.get_file_as_bytes(bom_path) != bom_source.to_utf8_buffer():
 			failures.append("leading-BOM source did not survive a load/save round trip")
+	var double_bom_source := "\ufeff" + bom_source
+	var double_bom_path := "user://mocha_editor_double_bom_save_test.mocha"
+	bom_script.set_source_code(double_bom_source)
+	if ResourceSaver.save(bom_script, double_bom_path) != OK:
+		failures.append("editor saver could not persist double-BOM source")
+	else:
+		var loaded_double_bom := ResourceLoader.load(double_bom_path, "", ResourceLoader.CACHE_MODE_IGNORE) as MochaScript
+		if loaded_double_bom == null or loaded_double_bom.get_source_code() != double_bom_source or ResourceSaver.save(loaded_double_bom, double_bom_path) != OK or FileAccess.get_file_as_bytes(double_bom_path) != double_bom_source.to_utf8_buffer():
+			failures.append("double-BOM source did not survive a load/save round trip")
 
 	var target_path := "user://mocha_editor_symlink_target.mocha"
 	var middle_path := "user://mocha_editor_symlink_middle.mocha"
@@ -113,6 +122,32 @@ func _initialize() -> void:
 				failures.append("editor saver did not reject a relative link beneath a symlinked parent")
 			elif FileAccess.get_file_as_string(relative_target).contains("return 9"):
 				failures.append("rejected relative-link save still modified the real target")
+
+	var traversal_root := "user://mocha_editor_traversal"
+	var traversal_elsewhere := "user://mocha_editor_traversal_elsewhere"
+	if DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(traversal_root)) != OK or DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(traversal_elsewhere.path_join("sub"))) != OK:
+		failures.append("editor could not create the parent-traversal save fixture directories")
+	else:
+		var traversal_dir := DirAccess.open(traversal_root)
+		var lexical_target := traversal_root.path_join("target.mocha")
+		var real_target := traversal_elsewhere.path_join("target.mocha")
+		var lexical_file := FileAccess.open(lexical_target, FileAccess.WRITE)
+		var real_file := FileAccess.open(real_target, FileAccess.WRITE)
+		if traversal_dir == null or lexical_file == null or real_file == null:
+			failures.append("editor could not prepare the parent-traversal save fixture")
+		else:
+			lexical_file.store_string("extends RefCounted\n")
+			lexical_file.close()
+			real_file.store_string("extends RefCounted\n")
+			real_file.close()
+			var alias_path := ProjectSettings.globalize_path(traversal_root.path_join("alias"))
+			var link_path_with_parent := ProjectSettings.globalize_path(traversal_root.path_join("link.mocha"))
+			if traversal_dir.create_link(ProjectSettings.globalize_path(traversal_elsewhere.path_join("sub")), alias_path) != OK or OS.execute("ln", ["-s", "alias/../target.mocha", link_path_with_parent]) != 0:
+				failures.append("editor could not establish the parent-traversal save fixture")
+			elif ResourceSaver.save(unsaved, traversal_root.path_join("link.mocha")) != ERR_CANT_RESOLVE:
+				failures.append("editor saver did not reject a symlink target containing parent traversal")
+			elif FileAccess.get_file_as_string(lexical_target).contains("return 9") or FileAccess.get_file_as_string(real_target).contains("return 9"):
+				failures.append("rejected parent-traversal save modified a possible target")
 
 	if failures.is_empty():
 		print("MOCHA_EDITOR_OK")

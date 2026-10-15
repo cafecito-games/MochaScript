@@ -34,6 +34,14 @@ bool directory_has_symlink_ancestor(godot::String p_directory) {
 	}
 }
 
+bool path_has_parent_traversal(const godot::String &p_path) {
+	const godot::PackedStringArray components = p_path.replace("\\", "/").split("/", false);
+	for (int64_t index = 0; index < components.size(); ++index) {
+		if (components[index] == "..") return true;
+	}
+	return false;
+}
+
 } // namespace
 
 void MochaScriptResourceSaver::_bind_methods() {}
@@ -56,6 +64,7 @@ godot::Error MochaScriptResourceSaver::_save(const godot::Ref<godot::Resource> &
 			break;
 		}
 		godot::String link_target = link_directory->read_link(target_path.get_file());
+		if (path_has_parent_traversal(link_target)) return godot::ERR_CANT_RESOLVE;
 		if (link_target.is_relative_path()) {
 			if (directory_has_symlink_ancestor(target_path.get_base_dir())) return godot::ERR_CANT_RESOLVE;
 			link_target = target_path.get_base_dir().path_join(link_target);

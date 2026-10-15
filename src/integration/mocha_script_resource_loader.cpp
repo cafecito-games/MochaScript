@@ -61,9 +61,13 @@ godot::Variant MochaScriptResourceLoader::_load(const godot::String &p_path, con
 		return read_error;
 	}
 	if (source_bytes.size() != source_size) return godot::ERR_FILE_CANT_READ;
-	const bool has_utf8_bom = source_size >= 3 && source_bytes[0] == 0xef &&
-			source_bytes[1] == 0xbb && source_bytes[2] == 0xbf;
-	const int64_t text_offset = has_utf8_bom ? 3 : 0;
+	int64_t bom_count = 0;
+	int64_t text_offset = 0;
+	while (source_size - text_offset >= 3 && source_bytes[text_offset] == 0xef &&
+			source_bytes[text_offset + 1] == 0xbb && source_bytes[text_offset + 2] == 0xbf) {
+		bom_count++;
+		text_offset += 3;
+	}
 	godot::String source;
 	if (source_size > text_offset) {
 		const godot::Error decode_error = source.parse_utf8(
@@ -71,7 +75,7 @@ godot::Variant MochaScriptResourceLoader::_load(const godot::String &p_path, con
 				source_size - text_offset);
 		if (decode_error != godot::OK) return godot::ERR_INVALID_DATA;
 	}
-	if (has_utf8_bom) source = godot::String::chr(0xfeff) + source;
+	for (int64_t index = 0; index < bom_count; ++index) source = godot::String::chr(0xfeff) + source;
 
 	const godot::String resource_path = p_original_path.is_empty() ? p_path : p_original_path;
 	const bool replacing = p_cache_mode == godot::ResourceLoader::CACHE_MODE_REPLACE ||
