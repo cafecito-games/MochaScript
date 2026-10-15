@@ -22,15 +22,17 @@ configuration, relevant patch hashes, and every imported file hash. Set
 `MOCHA_CUSTOM_GODOT_SOURCE` to use an existing checkout. The script refuses an existing checkout at
 another commit rather than rewriting it.
 
-The original import command was:
+The original component imports were:
 
 ```sh
 python3 scripts/import_gdscript.py initial-import tokenizer \
   --custom-godot "$MOCHA_CUSTOM_GODOT_SOURCE"
+python3 scripts/import_gdscript.py initial-import bootstrap-fixtures \
+  --custom-godot "$MOCHA_CUSTOM_GODOT_SOURCE"
 ```
 
-Initial import is create-only. It refuses any existing destination. After that one operation the
-destination is Mocha-owned forever.
+Each component import is create-only and may run once. It refuses any existing destination. After
+that operation the destination is Mocha-owned forever.
 
 ## Review a future upstream change
 
