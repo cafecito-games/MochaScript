@@ -135,14 +135,20 @@ def transformed_component(custom_godot: Path, component: str, lock: dict) -> dic
     }
 
 
+def component_provenance(provenance: dict, component: str) -> tuple[str, int, list[dict]]:
+    record = provenance.get("components", {}).get(component)
+    if not record:
+        raise SystemExit(f"component {component!r} has no immutable import provenance")
+    if isinstance(record, list):
+        return provenance["godot_commit"], provenance["transform_version"], record
+    return record["godot_commit"], record["transform_version"], record["entries"]
+
+
 def provenance_sources(custom_godot: Path, component: str, lock: dict) -> dict[str, bytes]:
     provenance = json.loads(PROVENANCE_PATH.read_text(encoding="utf-8"))
-    entries = provenance.get("components", {}).get(component)
-    if not entries:
-        raise SystemExit(f"component {component!r} has no immutable import provenance")
+    baseline_commit, transform_version, entries = component_provenance(provenance, component)
 
     godot_root = resolve_godot_root(custom_godot)
-    baseline_commit = provenance["godot_commit"]
     sources: dict[str, bytes] = {}
     expected = COMPONENTS[component]
     if {entry["source"] for entry in entries} != set(expected):
@@ -159,7 +165,7 @@ def provenance_sources(custom_godot: Path, component: str, lock: dict) -> dict[s
         destination = expected[relative]
         if entry["destination"] != destination:
             raise SystemExit(f"provenance destination mismatch for {relative}")
-        transformed = transform(relative, data, provenance["transform_version"])
+        transformed = transform(relative, data, transform_version)
         if sha256(transformed.encode("utf-8")) != entry["initial_transformed_sha256"]:
             raise SystemExit(f"provenance transformed hash mismatch for {relative}")
         sources[relative] = data
@@ -177,19 +183,27 @@ def initial_import(custom_godot: Path, component: str, lock: dict) -> None:
 def initial_import_locked(custom_godot: Path, component: str, lock: dict) -> None:
     generated = transformed_component(custom_godot, component, lock)
     provenance = {
-        "schema": 1,
+        "schema": 2,
         "policy": "create-only; future upstream changes are review inputs",
-        "godot_commit": lock["godot"]["commit"],
-        "transform_version": lock["imports"]["transform_version"],
         "initial_import_date": date.today().isoformat(),
         "components": {},
     }
     if PROVENANCE_PATH.exists():
         provenance = json.loads(PROVENANCE_PATH.read_text(encoding="utf-8"))
-        if provenance.get("godot_commit") != lock["godot"]["commit"]:
-            raise SystemExit("existing provenance belongs to a different Godot commit")
-        if provenance.get("transform_version") != lock["imports"]["transform_version"]:
-            raise SystemExit("existing provenance uses a different transform version")
+        if provenance.get("schema") == 1:
+            baseline_commit = provenance.pop("godot_commit")
+            transform_version = provenance.pop("transform_version")
+            provenance["components"] = {
+                name: {
+                    "godot_commit": baseline_commit,
+                    "transform_version": transform_version,
+                    "entries": entries,
+                }
+                for name, entries in provenance["components"].items()
+            }
+            provenance["schema"] = 2
+        if provenance.get("schema") != 2:
+            raise SystemExit("unsupported provenance schema")
     if component in provenance.get("components", {}):
         raise SystemExit(f"component {component!r} already has immutable import provenance")
 
@@ -199,15 +213,19 @@ def initial_import_locked(custom_godot: Path, component: str, lock: dict) -> Non
             "refusing to overwrite Mocha-owned files:\n  " + "\n  ".join(collisions)
         )
 
-    provenance["components"][component] = [
-        {
-            "source": source,
-            "source_sha256": lock["imports"]["files"][source],
-            "destination": destination,
-            "initial_transformed_sha256": sha256(generated[destination].encode("utf-8")),
-        }
-        for source, destination in COMPONENTS[component].items()
-    ]
+    provenance["components"][component] = {
+        "godot_commit": lock["godot"]["commit"],
+        "transform_version": lock["imports"]["transform_version"],
+        "entries": [
+            {
+                "source": source,
+                "source_sha256": lock["imports"]["files"][source],
+                "destination": destination,
+                "initial_transformed_sha256": sha256(generated[destination].encode("utf-8")),
+            }
+            for source, destination in COMPONENTS[component].items()
+        ],
+    }
     staged: list[tuple[Path, Path]] = []
     promoted: list[Path] = []
     provenance_temp = PROVENANCE_PATH.with_name(f".{PROVENANCE_PATH.name}.{os.getpid()}.tmp")
@@ -253,6 +271,7 @@ def review(custom_godot: Path, component: str, lock: dict, output: Path | None,
     baseline_sources = provenance_sources(custom_godot, component, lock)
     candidate_sources = checked_sources(custom_godot, component, lock)
     provenance = json.loads(PROVENANCE_PATH.read_text(encoding="utf-8"))
+    baseline_commit, _transform_version, _entries = component_provenance(provenance, component)
     upstream_chunks: list[str] = []
     for source, candidate_data in candidate_sources.items():
         baseline_data = baseline_sources[source]
@@ -260,7 +279,7 @@ def review(custom_godot: Path, component: str, lock: dict, output: Path | None,
             difflib.unified_diff(
                 baseline_data.decode("utf-8").splitlines(keepends=True),
                 candidate_data.decode("utf-8").splitlines(keepends=True),
-                fromfile=f"upstream-{provenance['godot_commit']}/{source}",
+                fromfile=f"upstream-{baseline_commit}/{source}",
                 tofile=f"upstream-{lock['godot']['commit']}/{source}",
             )
         )

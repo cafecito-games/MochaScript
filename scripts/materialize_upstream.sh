@@ -23,7 +23,15 @@ custom_commit=${pins[2]}
 godot_remote=${pins[3]}
 godot_tag=${pins[4]}
 godot_commit=${pins[5]}
-baseline_commit=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["godot_commit"])' "$repo_root/provenance/source_imports.json")
+readarray -t baseline_commits < <(python3 - "$repo_root/provenance/source_imports.json" <<'PY'
+import json, sys
+provenance = json.load(open(sys.argv[1]))
+if provenance.get("schema") == 1:
+    print(provenance["godot_commit"])
+else:
+    print("\n".join(sorted({record["godot_commit"] for record in provenance["components"].values()})))
+PY
+)
 target=${MOCHA_CUSTOM_GODOT_SOURCE:-$cache_base/custom-godot-$custom_commit}
 
 mkdir -p "$cache_base"
@@ -102,13 +110,15 @@ if [[ "$godot_tag_commit" != "$godot_commit" ]]; then
     echo "Godot tag $godot_tag resolves to $godot_tag_commit, expected $godot_commit" >&2
     exit 1
 fi
-if ! git -C "$godot_root" cat-file -e "$baseline_commit^{commit}" 2>/dev/null; then
-    git -C "$godot_root" fetch --depth=1 origin "$baseline_commit"
-fi
-git -C "$godot_root" cat-file -e "$baseline_commit^{commit}" || {
-    echo "Godot checkout does not contain provenance baseline $baseline_commit" >&2
-    exit 1
-}
+for baseline_commit in "${baseline_commits[@]}"; do
+    if ! git -C "$godot_root" cat-file -e "$baseline_commit^{commit}" 2>/dev/null; then
+        git -C "$godot_root" fetch --depth=1 origin "$baseline_commit"
+    fi
+    git -C "$godot_root" cat-file -e "$baseline_commit^{commit}" || {
+        echo "Godot checkout does not contain provenance baseline $baseline_commit" >&2
+        exit 1
+    }
+done
 
 python3 "$repo_root/scripts/inventory_upstream.py" --custom-godot "$target"
 python3 "$repo_root/scripts/import_gdscript.py" verify-source tokenizer --custom-godot "$target"

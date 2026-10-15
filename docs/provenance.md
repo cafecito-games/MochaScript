@@ -7,8 +7,10 @@ snapshot is Cafecito custom Godot release `v4.7.2-20260903.1`, outer commit
 SHA-256 `b61fb6208257c8d694463404d93d0b4d39e4d11a772babf012150bd57411d41b`; the Linux editor archive
 and extracted executable are independently pinned in the lock.
 
-The initial tokenizer files retain Godot's MIT notice. `provenance/source_imports.json` records the
-source path, source hash, destination, transformation version, and initial transformed hash. The
+The initial tokenizer files retain Godot's MIT notice. `provenance/source_imports.json` records each
+component's baseline commit and transformation version plus every source path, source hash,
+destination, and initial transformed hash. Later staged imports can therefore retain a different
+immutable baseline without rewriting earlier provenance. The
 pinned bootstrap corpus similarly retains exact upstream contents and hashes. `NOTICE.md` records
 Godot, godot-cpp-template, and BaristaScript attribution.
 

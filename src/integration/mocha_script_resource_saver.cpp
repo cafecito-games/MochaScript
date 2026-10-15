@@ -22,6 +22,18 @@ namespace {
 
 std::atomic<uint64_t> save_nonce{ 0 };
 
+bool directory_has_symlink_ancestor(godot::String p_directory) {
+	for (;;) {
+		const godot::String parent = p_directory.get_base_dir();
+		const godot::String name = p_directory.get_file();
+		if (name.is_empty() || parent == p_directory) return false;
+		godot::Ref<godot::DirAccess> parent_access = godot::DirAccess::open(parent);
+		if (parent_access.is_null()) return true;
+		if (parent_access->is_link(name)) return true;
+		p_directory = parent;
+	}
+}
+
 } // namespace
 
 void MochaScriptResourceSaver::_bind_methods() {}
@@ -44,7 +56,10 @@ godot::Error MochaScriptResourceSaver::_save(const godot::Ref<godot::Resource> &
 			break;
 		}
 		godot::String link_target = link_directory->read_link(target_path.get_file());
-		if (link_target.is_relative_path()) link_target = target_path.get_base_dir().path_join(link_target);
+		if (link_target.is_relative_path()) {
+			if (directory_has_symlink_ancestor(target_path.get_base_dir())) return godot::ERR_CANT_RESOLVE;
+			link_target = target_path.get_base_dir().path_join(link_target);
+		}
 		target_path = link_target;
 	}
 	if (!target_resolved) return godot::ERR_CYCLIC_LINK;

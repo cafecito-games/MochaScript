@@ -91,6 +91,29 @@ func _initialize() -> void:
 		else:
 			failures.append("editor could not establish the symlink-chain save fixture")
 
+	var real_parent := "user://mocha_editor_real_parent"
+	var alias_parent := "user://mocha_editor_alias_parent"
+	if DirAccess.make_dir_absolute(ProjectSettings.globalize_path(real_parent)) != OK:
+		failures.append("editor could not create the relative-link save fixture directory")
+	else:
+		var real_dir := DirAccess.open(real_parent)
+		var fixture_root := DirAccess.open("user://")
+		var relative_target := real_parent.path_join("target.mocha")
+		var relative_target_file := FileAccess.open(relative_target, FileAccess.WRITE)
+		if real_dir == null or fixture_root == null or relative_target_file == null:
+			failures.append("editor could not prepare the relative-link save fixture")
+		else:
+			relative_target_file.store_string("extends RefCounted\n")
+			relative_target_file.close()
+			var relative_link_absolute := ProjectSettings.globalize_path(real_parent.path_join("link.mocha"))
+			var alias_absolute := ProjectSettings.globalize_path(alias_parent)
+			if real_dir.create_link("target.mocha", relative_link_absolute) != OK or fixture_root.create_link(ProjectSettings.globalize_path(real_parent), alias_absolute) != OK:
+				failures.append("editor could not establish the relative-link save fixture")
+			elif ResourceSaver.save(unsaved, alias_parent.path_join("link.mocha")) != ERR_CANT_RESOLVE:
+				failures.append("editor saver did not reject a relative link beneath a symlinked parent")
+			elif FileAccess.get_file_as_string(relative_target).contains("return 9"):
+				failures.append("rejected relative-link save still modified the real target")
+
 	if failures.is_empty():
 		print("MOCHA_EDITOR_OK")
 		return
