@@ -27,6 +27,7 @@ Updated: 2026-10-15
 - `mocha_language_version()` proves intentional Mocha-only evolution across all execution layers.
 - Source materialization, create-only import, and review-only upstream delta scripts are verified.
 - Linux CI pins the private custom-engine release asset by immutable ID and SHA-256.
+- A recursive clean clone builds from the tracked tree and passes `./scripts/verify.sh`.
 
 ## Current checkpoint
 
@@ -42,7 +43,7 @@ Harden and expand the executable bootstrap subset while preserving the owned lan
 - [x] positive vertical-slice fixture
 - [x] negative syntax and type fixtures
 - [x] Mocha-only evolution canary
-- [ ] canonical clean-checkout verification command (working-tree verifier is green; clone audit pending)
+- [x] canonical clean-checkout verification command
 - [x] Linux CI against a pinned custom-engine artifact
 - [x] contributor and architecture documentation for the bootstrap seams
 
@@ -57,5 +58,5 @@ rather than succeeding as no-ops.
 
 ## Next action
 
-Verify a local clean clone, run an independent branch review, and fix every concrete finding before
-the bootstrap handoff.
+Use the divergence workflow to specify and implement the first post-bootstrap language feature.
+The recommended first seam is lexical-scope metadata, followed by full control-flow return analysis.
