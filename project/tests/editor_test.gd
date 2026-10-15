@@ -88,6 +88,8 @@ func _initialize() -> void:
 				failures.append("saving through a symlink chain replaced a link instead of its target")
 			elif permission_preserved and FileAccess.get_unix_permissions(target_path) != 416:
 				failures.append("saving through a symlink changed the target permissions")
+		else:
+			failures.append("editor could not establish the symlink-chain save fixture")
 
 	if failures.is_empty():
 		print("MOCHA_EDITOR_OK")

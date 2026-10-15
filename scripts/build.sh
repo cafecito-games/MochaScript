@@ -21,7 +21,7 @@ if (( detected_jobs < 1 )); then
 fi
 
 # The godot-cpp binding build is memory-heavy. Four is the measured-safe bootstrap
-# ceiling for this workspace; callers may only lower it.
+# ceiling for this workspace; callers may only lower it through MOCHA_JOBS.
 jobs=${MOCHA_JOBS:-4}
 if ! [[ "$jobs" =~ ^[1-9][0-9]*$ ]]; then
     echo "MOCHA_JOBS must be a positive integer" >&2
@@ -33,5 +33,14 @@ fi
 if (( jobs > 4 )); then
     jobs=4
 fi
+
+for argument in "$@"; do
+    case "$argument" in
+        -j*|--jobs|--jobs=*|jobs=*|num_jobs=*)
+            echo "Build job count is controlled only by the clamped MOCHA_JOBS value" >&2
+            exit 2
+            ;;
+    esac
+done
 
 exec scons -C "$repo_root" target=template_debug -j"$jobs" "$@"

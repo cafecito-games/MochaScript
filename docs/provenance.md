@@ -43,9 +43,9 @@ operation the destination is Mocha-owned forever.
 ./scripts/review_upstream.sh
 ```
 
-The command materializes both the immutable baseline commit and candidate commit, verifies the
-original source and transformed hashes recorded in `source_imports.json`, and verifies the candidate
-pinned source. It writes separate raw upstream-only (`*-upstream.patch`) and
+The command materializes the candidate checkout and fetches the immutable baseline commit into its
+Git object database for `git show`. It verifies the original source and transformed hashes recorded
+in `source_imports.json` and the candidate pinned source, then writes separate raw upstream-only (`*-upstream.patch`) and
 candidate-to-Mocha (`*-mocha.patch`) deltas under the user cache, and never modifies `src/` or
 fixtures. Each default invocation creates a unique report directory prefixed by the candidate Godot
 commit, so concurrent worktrees cannot mix results; an explicitly supplied directory must not
