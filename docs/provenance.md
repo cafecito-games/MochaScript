@@ -21,6 +21,7 @@ This materializes immutable checkouts under a commit-keyed directory in the pers
 verifies commits, patcher configuration, relevant patch hashes, and every imported file hash. Set
 `MOCHA_CUSTOM_GODOT_SOURCE` to use an existing checkout. Each pin gets a separate default checkout;
 the script refuses an explicitly selected checkout at another commit rather than rewriting it.
+Concurrent materialization of the same pin is serialized with a checkout-specific file lock.
 
 The original component imports were:
 
@@ -31,8 +32,9 @@ python3 scripts/import_gdscript.py initial-import bootstrap-fixtures \
   --custom-godot "$MOCHA_CUSTOM_GODOT_SOURCE"
 ```
 
-Each component import is create-only and may run once. It refuses any existing destination. After
-that operation the destination is Mocha-owned forever.
+Each component import is create-only and may run once. It refuses any existing destination and
+serializes provenance updates so parallel component imports cannot lose ledger entries. After that
+operation the destination is Mocha-owned forever.
 
 ## Review a future upstream change
 

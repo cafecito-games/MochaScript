@@ -28,6 +28,10 @@ target=${MOCHA_CUSTOM_GODOT_SOURCE:-$cache_base/custom-godot-$custom_commit}
 mkdir -p "$cache_base"
 target_parent=$(dirname "$target")
 mkdir -p "$target_parent"
+command -v flock >/dev/null || { echo "flock is required" >&2; exit 1; }
+lock_path="$target_parent/.$(basename "$target").lock"
+exec {materialize_lock_fd}>"$lock_path"
+flock "$materialize_lock_fd"
 df -h "$cache_base"
 
 if [[ ! -e "$target/.git" ]]; then

@@ -84,3 +84,4 @@ project/.godot/*
 project/bin/*/
 /bin/
 src/gen/
+provenance/.source_imports.json.lock

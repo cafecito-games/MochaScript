@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import fcntl
 import hashlib
 import json
 import os
@@ -163,6 +164,14 @@ def provenance_sources(custom_godot: Path, component: str, lock: dict) -> dict[s
 
 
 def initial_import(custom_godot: Path, component: str, lock: dict) -> None:
+    PROVENANCE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = PROVENANCE_PATH.with_name(f".{PROVENANCE_PATH.name}.lock")
+    with lock_path.open("a+", encoding="utf-8") as lock_stream:
+        fcntl.flock(lock_stream.fileno(), fcntl.LOCK_EX)
+        initial_import_locked(custom_godot, component, lock)
+
+
+def initial_import_locked(custom_godot: Path, component: str, lock: dict) -> None:
     generated = transformed_component(custom_godot, component, lock)
     provenance = {
         "schema": 1,
@@ -196,7 +205,6 @@ def initial_import(custom_godot: Path, component: str, lock: dict) -> None:
         }
         for source, destination in COMPONENTS[component].items()
     ]
-    PROVENANCE_PATH.parent.mkdir(parents=True, exist_ok=True)
     staged: list[tuple[Path, Path]] = []
     promoted: list[Path] = []
     provenance_temp = PROVENANCE_PATH.with_name(f".{PROVENANCE_PATH.name}.{os.getpid()}.tmp")
