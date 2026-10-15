@@ -41,6 +41,7 @@ public:
 	godot::TypedArray<godot::Dictionary> get_diagnostics() const;
 	bool is_compilation_valid() const;
 	bool is_placeholder_instance(godot::Object *p_object) const;
+	bool try_replace_source_code(const godot::String &p_code);
 	void set_diagnostic_path_for_validation(const godot::String &p_path) { diagnostic_path = p_path; }
 	const Program *get_program() const { return program.get(); }
 	const CompiledModule *get_compiled_module() const { return compiled_module.get(); }

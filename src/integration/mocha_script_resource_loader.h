@@ -23,7 +23,6 @@ public:
 	bool _handles_type(const godot::StringName &p_type) const override;
 	godot::String _get_resource_type(const godot::String &p_path) const override;
 	godot::String _get_resource_script_class(const godot::String &p_path) const override;
-	int64_t _get_resource_uid(const godot::String &p_path) const override;
 	godot::PackedStringArray _get_dependencies(const godot::String &p_path, bool p_add_types) const override;
 	godot::Error _rename_dependencies(const godot::String &p_path, const godot::Dictionary &p_renames) const override;
 	bool _exists(const godot::String &p_path) const override;

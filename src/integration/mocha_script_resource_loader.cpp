@@ -43,7 +43,6 @@ godot::String MochaScriptResourceLoader::_get_resource_type(const godot::String 
 }
 
 godot::String MochaScriptResourceLoader::_get_resource_script_class(const godot::String &) const { return {}; }
-int64_t MochaScriptResourceLoader::_get_resource_uid(const godot::String &) const { return -1; }
 godot::PackedStringArray MochaScriptResourceLoader::_get_dependencies(const godot::String &, bool) const { return {}; }
 godot::Error MochaScriptResourceLoader::_rename_dependencies(const godot::String &, const godot::Dictionary &) const { return godot::OK; }
 bool MochaScriptResourceLoader::_exists(const godot::String &p_path) const { return godot::FileAccess::file_exists(p_path); }
@@ -69,7 +68,9 @@ godot::Variant MochaScriptResourceLoader::_load(const godot::String &p_path, con
 		godot::Ref<MochaScript> cached_script(cached_resource);
 		if (cached_script.is_valid()) {
 			cached_script->set_diagnostic_path_for_validation(resource_path);
-			cached_script->_set_source_code(source);
+			if (!cached_script->try_replace_source_code(source)) {
+				return godot::ERR_ALREADY_IN_USE;
+			}
 			return cached_script;
 		}
 	}

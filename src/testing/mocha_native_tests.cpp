@@ -11,9 +11,12 @@
 #include "language/mocha_compiler.h"
 #include "language/mocha_parser.h"
 #include "language/mocha_tokenizer.h"
+#include "integration/mocha_script.h"
 #include "integration/mocha_script_language.h"
+#include "integration/mocha_script_resource_loader.h"
 #include "runtime/mocha_vm.h"
 
+#include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
@@ -59,6 +62,43 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			if (bool(result["valid"]) || first_error.is_empty() || first_error.get("path", "") != "res://example.mocha") {
 				failures.push_back("language: validation did not preserve the requested diagnostic path");
 			}
+		}
+	}
+
+	{
+		const godot::String path = "user://mocha_native_live_replace.mocha";
+		godot::Ref<godot::FileAccess> file = godot::FileAccess::open(path, godot::FileAccess::WRITE);
+		if (file.is_null()) {
+			failures.push_back("loader: could not create live-replacement fixture");
+		} else {
+			file->store_string("extends Node\nfunc value() -> int:\n\treturn 1\n");
+			file.unref();
+			godot::Ref<godot::Resource> resource = godot::ResourceLoader::get_singleton()->load(path);
+			godot::Ref<MochaScript> script(resource);
+			godot::Node *host = memnew(godot::Node);
+			if (script.is_null()) {
+				failures.push_back("loader: could not cache live-replacement fixture");
+			} else {
+				host->set_script(script);
+				file = godot::FileAccess::open(path, godot::FileAccess::WRITE);
+				if (file.is_null()) {
+					failures.push_back("loader: could not update live-replacement fixture");
+				} else {
+					file->store_string("extends Node\nfunc value() -> int:\n\treturn 2\n");
+					file.unref();
+					godot::Ref<MochaScriptResourceLoader> loader;
+					loader.instantiate();
+					const godot::Variant result = loader->_load(path, {}, false, godot::ResourceLoader::CACHE_MODE_REPLACE);
+					const godot::TypedArray<godot::Dictionary> diagnostics = script->get_diagnostics();
+					const godot::Dictionary first = diagnostics.is_empty() ? godot::Dictionary() : godot::Dictionary(diagnostics[0]);
+					if (result.get_type() != godot::Variant::INT || int64_t(result) != godot::ERR_ALREADY_IN_USE ||
+							!script->_get_source_code().contains("return 1") || !script->is_compilation_valid() ||
+							first.get("code", "") != "M0003") {
+						failures.push_back("loader: live CACHE_MODE_REPLACE did not report ERR_ALREADY_IN_USE while preserving compiled source");
+					}
+				}
+			}
+			memdelete(host);
 		}
 	}
 

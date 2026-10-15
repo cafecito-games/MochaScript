@@ -5,6 +5,8 @@ func _initialize() -> void:
 	var failures: Array[String] = []
 	if not Engine.is_editor_hint():
 		failures.append("editor behavior test did not run with the editor hint")
+	if ResourceLoader.get_resource_uid("res://example.mocha") < 0:
+		failures.append("example.mocha has no editor-generated resource UID")
 	var script := ResourceLoader.load("res://example.mocha") as MochaScript
 	if script == null or not script.is_compilation_valid():
 		failures.append("example.mocha was not a valid MochaScript in editor context")

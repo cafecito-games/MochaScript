@@ -144,11 +144,11 @@ void *MochaScript::_placeholder_instance_create(godot::Object *p_for_object) con
 }
 bool MochaScript::_has_source_code() const { return true; }
 godot::String MochaScript::_get_source_code() const { return source_code; }
-void MochaScript::_set_source_code(const godot::String &p_code) {
+bool MochaScript::try_replace_source_code(const godot::String &p_code) {
 	bool reload_path_backed_resource = false;
 	{
 		std::lock_guard<std::mutex> lock(instances_mutex);
-		if (p_code == source_code) return;
+		if (p_code == source_code) return true;
 		if (!instances.is_empty()) {
 			diagnostics.clear();
 			godot::Dictionary diagnostic;
@@ -160,7 +160,7 @@ void MochaScript::_set_source_code(const godot::String &p_code) {
 			diagnostic["end_line"] = 1;
 			diagnostic["end_column"] = 1;
 			diagnostics.push_back(diagnostic);
-			return;
+			return false;
 		}
 		source_code = p_code;
 		valid = false;
@@ -174,7 +174,9 @@ void MochaScript::_set_source_code(const godot::String &p_code) {
 	// including when ResourceLoader updates a cached MochaScript. New in-memory
 	// resources retain the explicit reload contract.
 	if (reload_path_backed_resource) _reload(false);
+	return true;
 }
+void MochaScript::_set_source_code(const godot::String &p_code) { try_replace_source_code(p_code); }
 
 godot::Error MochaScript::_reload(bool) {
 	std::lock_guard<std::mutex> lock(instances_mutex);

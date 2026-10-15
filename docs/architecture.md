@@ -41,7 +41,8 @@ Source replacement is likewise refused with diagnostic `M0003` while an instance
 published source and executable module cannot disagree. With no live instance, changing source
 immediately invalidates and discards the old AST and module. A path-backed resource recompiles
 transactionally at once (including `CACHE_MODE_REPLACE`); a new in-memory resource becomes
-executable after its explicit reload.
+executable after its explicit reload. Replacing cached source while a runtime instance is alive
+fails with `ERR_ALREADY_IN_USE` and preserves the old source and executable module.
 
 Each attached object receives a `MochaScriptInstance` containing its own member vector and a strong
 reference to the script. Godot reaches it through `GDExtensionScriptInstanceInfo3`; startup refuses
