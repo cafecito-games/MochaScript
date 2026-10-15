@@ -190,6 +190,7 @@ godot::Error MochaScript::_reload(bool) {
 	if (!instances.is_empty()) {
 		return godot::ERR_ALREADY_IN_USE;
 	}
+	last_source_error.clear();
 	valid = true;
 	token_count = 0;
 	diagnostics.clear();

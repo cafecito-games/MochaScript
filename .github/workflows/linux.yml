@@ -54,6 +54,7 @@ jobs:
           print(runtime["repository"])
           print(runtime["linux_editor_release_asset_id"])
           print(runtime["linux_editor_sha256"])
+          print(runtime["linux_editor_binary_sha256"])
           PY
           )
           godot_asset_api="https://api.github.com/repos/${godot_pin[0]}/releases/assets/${godot_pin[1]}"
@@ -66,6 +67,7 @@ jobs:
           tar -xzf .ci/godot.tar.gz -C .ci/bin
           mv .ci/bin/godot.linuxbsd.editor.x86_64 .ci/bin/godot
           chmod +x .ci/bin/godot
+          echo "${godot_pin[3]}  .ci/bin/godot" | sha256sum --check --strict
 
       - name: Verify MochaScript
         run: PATH="$PWD/.ci/bin:$PATH" ./scripts/verify.sh

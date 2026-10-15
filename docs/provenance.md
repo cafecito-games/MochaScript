@@ -4,7 +4,8 @@
 snapshot is Cafecito custom Godot release `v4.7.2-20260903.1`, outer commit
 `e762551293cd7312e0fd6695b76b1050d7e15bdc`, with its Godot source at
 `ed1daf0bf001b61586d9930840f2f1394092c079` (`4.7.2-stable`). The exact installed extension API has
-SHA-256 `b61fb6208257c8d694463404d93d0b4d39e4d11a772babf012150bd57411d41b`.
+SHA-256 `b61fb6208257c8d694463404d93d0b4d39e4d11a772babf012150bd57411d41b`; the Linux editor archive
+and extracted executable are independently pinned in the lock.
 
 The initial tokenizer files retain Godot's MIT notice. `provenance/source_imports.json` records the
 source path, source hash, destination, transformation version, and initial transformed hash. The
@@ -42,8 +43,9 @@ operation the destination is Mocha-owned forever.
 ./scripts/review_upstream.sh
 ```
 
-The command verifies both the immutable original import recorded in `source_imports.json` and the
-candidate pinned source. It writes separate raw upstream-only (`*-upstream.patch`) and
+The command materializes both the immutable baseline commit and candidate commit, verifies the
+original source and transformed hashes recorded in `source_imports.json`, and verifies the candidate
+pinned source. It writes separate raw upstream-only (`*-upstream.patch`) and
 candidate-to-Mocha (`*-mocha.patch`) deltas under the user cache, and never modifies `src/` or
 fixtures. Each default invocation creates a unique report directory prefixed by the candidate Godot
 commit, so concurrent worktrees cannot mix results; an explicitly supplied directory must not

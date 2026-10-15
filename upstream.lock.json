@@ -42,7 +42,8 @@
     "extension_api_sha256": "b61fb6208257c8d694463404d93d0b4d39e4d11a772babf012150bd57411d41b",
     "precision": "single",
     "linux_editor_release_asset_id": 542713790,
-    "linux_editor_sha256": "a9d5fb1a2998874cfc0da9100e690d3b76e46390fcf4da31585a70000a1e8ad6"
+    "linux_editor_sha256": "a9d5fb1a2998874cfc0da9100e690d3b76e46390fcf4da31585a70000a1e8ad6",
+    "linux_editor_binary_sha256": "de80b383661a10ef263ef30aef9f9de89114f6f4d14e6e1b350779f7aaa912e3"
   },
   "godot_cpp_template": {
     "repository": "https://github.com/godotengine/godot-cpp-template.git",

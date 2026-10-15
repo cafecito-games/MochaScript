@@ -263,11 +263,11 @@ void MochaTokenizerText::set_source_code(const String &p_source_code) {
 	source = p_source_code;
 	source_utf32 = source.utf32();
 	_source = source_utf32.get_data();
-	start_position = 0;
+	length = p_source_code.length();
+	position = length > 0 && _source[0] == 0xfeff ? 1 : 0;
+	start_position = position;
 	line = 1;
 	column = 1;
-	length = p_source_code.length();
-	position = 0;
 }
 
 void MochaTokenizerText::set_cursor_position(int p_line, int p_column) {

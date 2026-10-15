@@ -63,6 +63,8 @@ func _initialize() -> void:
 			if detach_result != 1 or host.get_script() != null:
 				failures.append("script instance did not survive and complete a self-detach call safely")
 		host.free()
+		if script.reload() != OK or not script.get_last_source_error().is_empty():
+			failures.append("successful reload did not clear the prior source-operation error")
 
 	var transient := MochaScript.new()
 	transient.set_source_code("extends RefCounted\nfunc answer() -> int:\n\treturn 42\n")

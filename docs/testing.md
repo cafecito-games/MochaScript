@@ -28,7 +28,8 @@ placeholder test. Each verifier invocation gets isolated XDG data, config, and c
 its log directory, so fixed `user://` fixtures cannot collide across worktrees. Logs are written
 under the user's cache rather than the repository.
 
-Linux CI reads the private release repository, immutable asset ID, and SHA-256 from
-`upstream.lock.json`, then verifies the archive before execution. Configure
+Linux CI reads the private release repository, immutable asset ID, archive SHA-256, and extracted
+binary SHA-256 from `upstream.lock.json`, then verifies both archive and executable before use.
+Local verification hashes the resolved `godot` executable against the same binary pin. Configure
 `CUSTOM_GODOT_READ_TOKEN` as a read-only Actions secret. No credential or mutable latest-release URL
 is embedded in the repository.

@@ -21,7 +21,8 @@ The release's enabled `autoload-path-uid` patch modifies
 `modules/gdscript/gdscript_analyzer.cpp` and GDScript editor/test code. Disabled GDScript patchers
 are not part of the baseline. The installed binary reports
 `4.7.2.stable.cafecito_e76255129.ed1daf0bf`; its dumped extension API has SHA-256
-`b61fb6208257c8d694463404d93d0b4d39e4d11a772babf012150bd57411d41b`.
+`b61fb6208257c8d694463404d93d0b4d39e4d11a772babf012150bd57411d41b`, and the executable itself
+has SHA-256 `de80b383661a10ef263ef30aef9f9de89114f6f4d14e6e1b350779f7aaa912e3`.
 
 The non-test GDScript implementation is not a standalone library. Direct inspection of the pinned
 source found 146 includes from `core/`, 36 from `editor/`, seven from `scene/`, two from other

@@ -61,6 +61,10 @@ func _initialize() -> void:
 	var bom_path := "user://mocha_editor_bom_save_test.mocha"
 	if ResourceSaver.save(bom_script, bom_path) != OK or FileAccess.get_file_as_bytes(bom_path) != bom_source.to_utf8_buffer():
 		failures.append("editor saver did not preserve leading-BOM source bytes")
+	else:
+		var loaded_bom := ResourceLoader.load(bom_path, "", ResourceLoader.CACHE_MODE_IGNORE) as MochaScript
+		if loaded_bom == null or not loaded_bom.is_compilation_valid() or loaded_bom.get_source_code() != bom_source or ResourceSaver.save(loaded_bom, bom_path) != OK or FileAccess.get_file_as_bytes(bom_path) != bom_source.to_utf8_buffer():
+			failures.append("leading-BOM source did not survive a load/save round trip")
 
 	var target_path := "user://mocha_editor_symlink_target.mocha"
 	var middle_path := "user://mocha_editor_symlink_middle.mocha"

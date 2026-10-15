@@ -54,11 +54,24 @@ godot::Variant MochaScriptResourceLoader::_load(const godot::String &p_path, con
 		return godot::FileAccess::get_open_error();
 	}
 
-	const godot::String source = file->get_as_text();
+	const int64_t source_size = file->get_length();
+	const godot::PackedByteArray source_bytes = file->get_buffer(source_size);
 	const godot::Error read_error = file->get_error();
 	if (read_error != godot::OK && read_error != godot::ERR_FILE_EOF) {
 		return read_error;
 	}
+	if (source_bytes.size() != source_size) return godot::ERR_FILE_CANT_READ;
+	const bool has_utf8_bom = source_size >= 3 && source_bytes[0] == 0xef &&
+			source_bytes[1] == 0xbb && source_bytes[2] == 0xbf;
+	const int64_t text_offset = has_utf8_bom ? 3 : 0;
+	godot::String source;
+	if (source_size > text_offset) {
+		const godot::Error decode_error = source.parse_utf8(
+				reinterpret_cast<const char *>(source_bytes.ptr()) + text_offset,
+				source_size - text_offset);
+		if (decode_error != godot::OK) return godot::ERR_INVALID_DATA;
+	}
+	if (has_utf8_bom) source = godot::String::chr(0xfeff) + source;
 
 	const godot::String resource_path = p_original_path.is_empty() ? p_path : p_original_path;
 	const bool replacing = p_cache_mode == godot::ResourceLoader::CACHE_MODE_REPLACE ||

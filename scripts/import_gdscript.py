@@ -86,7 +86,9 @@ def checked_sources(custom_godot: Path, component: str, lock: dict) -> dict[str,
     return result
 
 
-def transform(relative: str, data: bytes) -> str:
+def transform(relative: str, data: bytes, version: int) -> str:
+    if version != 1:
+        raise SystemExit(f"unsupported import transform version {version}")
     text = data.decode("utf-8")
     if relative.endswith(".gd"):
         return text
@@ -126,7 +128,9 @@ def transform(relative: str, data: bytes) -> str:
 def transformed_component(custom_godot: Path, component: str, lock: dict) -> dict[str, str]:
     sources = checked_sources(custom_godot, component, lock)
     return {
-        COMPONENTS[component][relative]: transform(relative, data)
+        COMPONENTS[component][relative]: transform(
+            relative, data, lock["imports"]["transform_version"]
+        )
         for relative, data in sources.items()
     }
 
@@ -155,10 +159,9 @@ def provenance_sources(custom_godot: Path, component: str, lock: dict) -> dict[s
         destination = expected[relative]
         if entry["destination"] != destination:
             raise SystemExit(f"provenance destination mismatch for {relative}")
-        if provenance["transform_version"] == lock["imports"]["transform_version"]:
-            transformed = transform(relative, data)
-            if sha256(transformed.encode("utf-8")) != entry["initial_transformed_sha256"]:
-                raise SystemExit(f"provenance transformed hash mismatch for {relative}")
+        transformed = transform(relative, data, provenance["transform_version"])
+        if sha256(transformed.encode("utf-8")) != entry["initial_transformed_sha256"]:
+            raise SystemExit(f"provenance transformed hash mismatch for {relative}")
         sources[relative] = data
     return sources
 
@@ -268,7 +271,9 @@ def review(custom_godot: Path, component: str, lock: dict, output: Path | None,
     for source, candidate_data in candidate_sources.items():
         relative = COMPONENTS[component][source]
         try:
-            candidate_text = transform(source, candidate_data)
+            candidate_text = transform(
+                source, candidate_data, lock["imports"]["transform_version"]
+            )
         except SystemExit as error:
             transform_failed = True
             mocha_chunks.append(f"# TRANSFORM FAILED for {source}: {error}\n")

@@ -15,6 +15,7 @@ git submodule update --init --recursive
 python3 - <<'PY'
 import hashlib
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -100,6 +101,18 @@ actual_api = hashlib.sha256(api.read_bytes()).hexdigest()
 expected_api = lock["installed_runtime"]["extension_api_sha256"]
 if actual_api != expected_api:
     raise SystemExit(f"extension API mismatch: expected {expected_api}, got {actual_api}")
+
+godot_path = Path(shutil.which("godot")).resolve()
+binary_hash = hashlib.sha256()
+with godot_path.open("rb") as stream:
+    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+        binary_hash.update(chunk)
+actual_binary = binary_hash.hexdigest()
+expected_binary = lock["installed_runtime"]["linux_editor_binary_sha256"]
+if actual_binary != expected_binary:
+    raise SystemExit(
+        f"Godot binary mismatch: expected {expected_binary}, got {actual_binary} ({godot_path})"
+    )
 PY
 
 expected_version=$(python3 -c 'import json; print(json.load(open("upstream.lock.json"))["installed_runtime"]["version"])')
