@@ -109,6 +109,20 @@ if grep -Eiq 'SCRIPT ERROR|ERROR:|crash|segmentation fault' "$editor_log" "$reco
     exit 1
 fi
 
+while IFS= read -r gd_script; do
+    if ! git -C "$repo_root" ls-files --error-unmatch "${gd_script}.uid" >/dev/null 2>&1; then
+        echo "Tracked GDScript is missing its committed UID sidecar: ${gd_script}.uid" >&2
+        exit 1
+    fi
+done < <(git -C "$repo_root" ls-files 'project/*.gd' 'project/**/*.gd')
+
+untracked_uids=$(git -C "$repo_root" ls-files --others --exclude-standard -- '*.uid')
+if [[ -n "$untracked_uids" ]]; then
+    echo "Godot generated untracked UID sidecars; commit them for stable resource identity:" >&2
+    printf '%s\n' "$untracked_uids" >&2
+    exit 1
+fi
+
 rm -f -- "$editor_log" "$editor_test_log" "$recognition_log" "$tokenizer_log" "$frontend_log" \
     "$execution_log" "$native_log" "$bootstrap_corpus_log"
 rm -rf -- "$log_dir/data" "$log_dir/config" "$log_dir/cache"

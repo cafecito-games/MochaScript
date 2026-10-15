@@ -80,7 +80,6 @@ project/.godot/
 !project/.godot/
 project/.godot/*
 !project/.godot/extension_list.cfg
-*.gd.uid
 project/bin/*/
 /bin/
 src/gen/
