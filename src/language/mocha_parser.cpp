@@ -209,6 +209,7 @@ bool MochaParser::parse_member(Program &r_program) {
 	}
 	member.type = TypeRef::any();
 	if (match(Token::COLON)) {
+		member.has_explicit_type = true;
 		member.type = parse_type();
 	}
 	if (match(Token::EQUAL)) {
@@ -290,6 +291,7 @@ StmtPtr MochaParser::parse_variable_statement() {
 	}
 	result->declared_type = TypeRef::any();
 	if (match(Token::COLON)) {
+		result->has_explicit_type = true;
 		result->declared_type = parse_type();
 	}
 	if (match(Token::EQUAL)) {

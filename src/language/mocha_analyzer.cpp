@@ -203,8 +203,12 @@ TypeRef MochaAnalyzer::analyze_expression(ExprPtr &p_expression, Context &r_cont
 			break;
 		case ExprKind::IDENTIFIER: {
 			if (const TypeRef *local = r_context.locals.getptr(p_expression->name)) result = *local;
-			else if (const TypeRef *member = members.getptr(p_expression->name)) result = *member;
-			else {
+			else if (const TypeRef *member = members.getptr(p_expression->name)) {
+				if (r_context.in_member_initializer && pending_inferred_members.has(p_expression->name)) {
+					report(p_expression->span, "M2032", vformat("Member '%s' is read before its inferred carrier type is known.", String(p_expression->name)));
+				}
+				result = *member;
+			} else {
 				report(p_expression->span, "M2001", vformat("Unknown identifier '%s'.", String(p_expression->name)));
 			}
 		} break;
@@ -309,7 +313,8 @@ void MochaAnalyzer::analyze_statement(StmtPtr &p_statement, Context &r_context) 
 			}
 			TypeRef value = p_statement->expression ? analyze_expression(p_statement->expression, r_context) : TypeRef::any();
 			TypeRef type = p_statement->declared_type;
-			if (type.kind == TypeKind::ANY && value.kind != TypeKind::NIL && value.kind != TypeKind::VOID) type = value;
+			if (!p_statement->has_explicit_type && type.kind == TypeKind::ANY &&
+					value.kind != TypeKind::NIL && value.kind != TypeKind::VOID) type = value;
 			p_statement->declared_type = type;
 			validate_type(type, p_statement->span, vformat("for local '%s'", String(p_statement->name)));
 			if (p_statement->expression && !assignable(type, value)) {
@@ -383,6 +388,7 @@ Error MochaAnalyzer::analyze(Program &p_program, const String &p_path) {
 	program = &p_program;
 	path = p_path.is_empty() ? String("<memory>") : p_path;
 	members.clear();
+	pending_inferred_members.clear();
 	diagnostics.clear();
 	expression_depth = 0;
 	if (!ClassDB::class_exists(p_program.base_type)) {
@@ -410,6 +416,9 @@ Error MochaAnalyzer::analyze(Program &p_program, const String &p_path) {
 			report(member.span, "M2020", vformat("Member '%s' is already declared.", String(member.name)));
 		} else {
 			members.insert(member.name, member.type);
+			if (!member.has_explicit_type && member.type.kind == TypeKind::ANY && member.initializer) {
+				pending_inferred_members.insert(member.name, true);
+			}
 		}
 	}
 	for (FunctionDecl &function : p_program.functions) {
@@ -423,15 +432,18 @@ Error MochaAnalyzer::analyze(Program &p_program, const String &p_path) {
 	Context member_context;
 	member_context.in_member_initializer = true;
 	for (MemberDecl &member : p_program.members) {
+		pending_inferred_members.erase(member.name);
 		if (!member.initializer) continue;
 		const TypeRef value = analyze_expression(member.initializer, member_context);
-		if (member.type.kind == TypeKind::ANY && value.kind != TypeKind::NIL && value.kind != TypeKind::VOID) {
+		if (!member.has_explicit_type && member.type.kind == TypeKind::ANY &&
+				value.kind != TypeKind::NIL && value.kind != TypeKind::VOID) {
 			member.type = value;
 			members[member.name] = value;
 		} else if (!assignable(member.type, value)) {
 			report(member.span, "M2022", vformat("Cannot initialize member '%s' of type %s with %s.", String(member.name), type_name(member.type), type_name(value)));
 		}
 	}
+	pending_inferred_members.clear();
 
 	for (FunctionDecl &function : p_program.functions) {
 		Context context;

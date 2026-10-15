@@ -392,12 +392,12 @@ Variant MochaScriptInstance::call(const StringName &p_method, const Variant **p_
 	Variant result = MochaVM::call(*module, *function, owner, members,
 			p_arguments, p_argument_count, r_error, failure);
 	if (!failure.message.is_empty()) {
-		if (!failure.reported) {
+		const bool captured = MochaVM::publish_nested_failure(failure, call_owner_id, p_method);
+		if (!captured && !failure.reported) {
 			UtilityFunctions::push_error(vformat("%s:%d:%d: %s: %s", script->get_path(), failure.span.line,
 					failure.span.column, failure.code, failure.message));
 			failure.reported = true;
 		}
-		MochaVM::publish_nested_failure(failure, call_owner_id, p_method);
 	}
 	return result;
 }

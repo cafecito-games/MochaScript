@@ -41,8 +41,9 @@ public:
 		return convert_value(p_value, p_type, r_converted);
 	}
 	// A script instance reached through a host `callp` reports a nested VM failure
-	// here so the outer VM frame cannot mistake its nil result for success.
-	static void publish_nested_failure(const RuntimeFailure &p_failure, uint64_t p_owner_id,
+	// here so the outer VM frame cannot mistake its nil result for success. Returns
+	// true when an enclosing matching call captured the failure for propagation.
+	static bool publish_nested_failure(const RuntimeFailure &p_failure, uint64_t p_owner_id,
 			const StringName &p_method);
 };
 

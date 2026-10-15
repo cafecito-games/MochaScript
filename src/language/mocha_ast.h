@@ -111,6 +111,7 @@ struct Statement {
 	SourceSpan span;
 	StringName name;
 	TypeRef declared_type;
+	bool has_explicit_type = false;
 	MochaTokenizer::Token::Type operation = MochaTokenizer::Token::EMPTY;
 	ExprPtr target;
 	ExprPtr expression;
@@ -135,6 +136,7 @@ struct FunctionDecl {
 struct MemberDecl {
 	StringName name;
 	TypeRef type;
+	bool has_explicit_type = false;
 	ExprPtr initializer;
 	SourceSpan span;
 };

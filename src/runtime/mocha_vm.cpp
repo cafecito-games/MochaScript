@@ -87,9 +87,15 @@ struct NestedFailureCapture {
 	~NestedFailureCapture() { vm_failure_captures.pop_back(); }
 };
 
-bool take_nested_failure(const RuntimeFailure &p_captured, RuntimeFailure &r_failure) {
+bool take_nested_failure(const RuntimeFailure &p_captured, const SourceSpan &p_call_span,
+		RuntimeFailure &r_failure) {
 	if (p_captured.message.is_empty()) return false;
 	r_failure = p_captured;
+	// The captured error belongs to an engine-mediated inner call, not to the
+	// arguments of the outer host entry. Keeping INVALID_ARGUMENT metadata here
+	// can make Godot inspect an argument that the outer call does not have.
+	r_failure.preserve_call_error = false;
+	r_failure.span = p_call_span;
 	return true;
 }
 
@@ -532,7 +538,7 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 					receiver.callp(instruction.name, pointers.data(), int(pointers.size()), result, nested_error);
 					nested_failure = capture.failure;
 				}
-				if (take_nested_failure(nested_failure, r_failure)) {
+				if (take_nested_failure(nested_failure, instruction.span, r_failure)) {
 					r_call_error.error = GDEXTENSION_CALL_ERROR_INVALID_ARGUMENT;
 					return {};
 				}
@@ -607,12 +613,14 @@ Variant MochaVM::call(const CompiledModule &p_module, const CompiledFunction &p_
 	return result;
 }
 
-void MochaVM::publish_nested_failure(const RuntimeFailure &p_failure, uint64_t p_owner_id,
+bool MochaVM::publish_nested_failure(const RuntimeFailure &p_failure, uint64_t p_owner_id,
 		const StringName &p_method) {
-	if (p_failure.message.is_empty() || vm_failure_captures.empty()) return;
+	if (p_failure.message.is_empty() || vm_failure_captures.empty()) return false;
 	NestedFailureCapture *capture = vm_failure_captures.back();
-	if (capture->owner_id != p_owner_id || (!p_method.is_empty() && capture->method != p_method)) return;
+	if (capture->owner_id != p_owner_id || (!p_method.is_empty() && capture->method != p_method)) return false;
 	capture->failure = p_failure;
+	capture->failure.preserve_call_error = false;
+	return true;
 }
 
 } // namespace mocha_script

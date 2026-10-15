@@ -19,6 +19,7 @@
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/classes/node.hpp>
+#include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
 
 #include <limits>
@@ -248,7 +249,9 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			"\twhile touched < 200000:\n"
 			"\t\ttouched += 1\n"
 			"func recurse() -> int:\n"
-			"\treturn recurse()\n";
+			"\treturn recurse()\n"
+			"func explicit_forward_wrong() -> int:\n"
+			"\treturn self.add(\"wrong\")\n";
 	Program program;
 	MochaParser parser;
 	if (parser.parse(executable, "res://native_pipeline.mocha", program) != godot::OK) {
@@ -276,6 +279,9 @@ godot::PackedStringArray MochaNativeTests::run() const {
 						for (const godot::Variant &value : p_values) pointers.push_back(&value);
 						return MochaVM::call(*module, *module->find_function(p_name), owner.ptr(), members,
 								pointers.data(), int(pointers.size()), r_error, r_failure);
+					};
+					auto failure_at = [](const RuntimeFailure &p_failure, int p_line, int p_column) {
+						return p_failure.span.line == p_line && p_failure.span.column == p_column;
 					};
 					GDExtensionCallError call_error;
 					godot::Variant result = invoke("add", { int64_t(40) }, call_error, failure);
@@ -323,31 +329,35 @@ godot::PackedStringArray MochaNativeTests::run() const {
 					result = invoke("dynamic_suffix", { godot::String("Mocha") }, call_error, failure);
 					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant("Mocha!")) failures.push_back("analyzer: Variant plus String was rejected or narrowed");
 					invoke("dynamic_modulo", { godot::String("%d") }, call_error, failure);
-					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty() || failure.span.line < 1) failures.push_back("vm: dynamic String modulo did not fail with a source-located runtime error");
+					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty() || !failure_at(failure, 58, 9)) failures.push_back("vm: dynamic String modulo did not fail at 58:9");
 					invoke("dynamic_modulo_assign", { godot::String("%d") }, call_error, failure);
-					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty() || failure.span.line < 1) failures.push_back("vm: dynamic String modulo assignment did not fail with a source-located runtime error");
-					for (const godot::StringName &method : {
-							godot::StringName("dynamic_shift_left"), godot::StringName("dynamic_shift_right"),
-							godot::StringName("dynamic_bit_and"), godot::StringName("dynamic_bit_or"),
-							godot::StringName("dynamic_bit_xor"), godot::StringName("dynamic_bit_not") }) {
+					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty() || !failure_at(failure, 60, 2)) failures.push_back("vm: dynamic String modulo assignment did not fail at 60:2");
+					struct DynamicIntegerFailure {
+						godot::StringName method;
+						int line;
+					};
+					for (const DynamicIntegerFailure &expected : {
+							DynamicIntegerFailure{ "dynamic_shift_left", 63 }, DynamicIntegerFailure{ "dynamic_shift_right", 65 },
+							DynamicIntegerFailure{ "dynamic_bit_and", 67 }, DynamicIntegerFailure{ "dynamic_bit_or", 69 },
+							DynamicIntegerFailure{ "dynamic_bit_xor", 71 }, DynamicIntegerFailure{ "dynamic_bit_not", 73 } }) {
 						for (const godot::Variant &invalid_operand : { godot::Variant("not an int"), godot::Variant(1.5) }) {
-							invoke(method, { invalid_operand }, call_error, failure);
+							invoke(expected.method, { invalid_operand }, call_error, failure);
 							if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
-									failure.message.is_empty() || failure.span.line < 1 || failure.span.column < 1) {
-								failures.push_back("vm: dynamic integer operator lacked a source-located M4001 failure: " + godot::String(method));
+									failure.message.is_empty() || !failure_at(failure, expected.line, 9)) {
+								failures.push_back("vm: dynamic integer operator had the wrong M4001 span: " + godot::String(expected.method));
 							}
 						}
 					}
 					for (const int64_t invalid_count : { int64_t(-1), int64_t(64) }) {
 						invoke("dynamic_shift_left", { invalid_count }, call_error, failure);
 						if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
-								!failure.message.contains("between 0 and 63") || failure.span.line < 1) {
-							failures.push_back("vm: invalid left-shift count lacked a deterministic source-located failure");
+								!failure.message.contains("between 0 and 63") || !failure_at(failure, 63, 9)) {
+							failures.push_back("vm: invalid left-shift count did not fail at 63:9");
 						}
 						invoke("dynamic_shift_right", { invalid_count }, call_error, failure);
 						if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
-								!failure.message.contains("between 0 and 63") || failure.span.line < 1) {
-							failures.push_back("vm: invalid right-shift count lacked a deterministic source-located failure");
+								!failure.message.contains("between 0 and 63") || !failure_at(failure, 65, 9)) {
+							failures.push_back("vm: invalid right-shift count did not fail at 65:9");
 						}
 					}
 					result = invoke("negative_shift_left", {}, call_error, failure);
@@ -375,24 +385,48 @@ godot::PackedStringArray MochaNativeTests::run() const {
 					invoke("add", { godot::String("wrong") }, call_error, failure);
 					if (call_error.error != GDEXTENSION_CALL_ERROR_INVALID_ARGUMENT || call_error.argument != 0 ||
 							call_error.expected != GDEXTENSION_VARIANT_TYPE_INT || failure.code != "M4001" ||
-							failure.span.line < 1 || failure.span.column < 1) {
+							!failure_at(failure, 11, 1)) {
 						failures.push_back("vm: wrong external argument did not preserve its typed Godot call error and Mocha location");
 					}
 					invoke("forward_wrong", { godot::String("wrong") }, call_error, failure);
-					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty() || failure.span.line < 1 || failure.span.column < 1) failures.push_back("vm: nested wrong argument lacked its call-site span");
+					if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" || !failure_at(failure, 83, 9)) failures.push_back("vm: nested wrong argument did not fail at 83:9");
+					godot::Ref<MochaScript> nested_script;
+					nested_script.instantiate();
+					nested_script->_set_source_code(executable);
+					godot::Ref<godot::RefCounted> nested_owner;
+					nested_owner.instantiate();
+					if (nested_script->_reload(false) != godot::OK) {
+						failures.push_back("vm: explicit nested-call fixture did not compile");
+					} else {
+						nested_owner->set_script(nested_script);
+						godot::Vector<godot::Variant> nested_members;
+						RuntimeFailure nested_initialization_failure;
+						if (nested_owner->get_script() != nested_script ||
+								MochaVM::initialize(*module, nested_owner.ptr(), nested_members, nested_initialization_failure) != godot::OK) {
+							failures.push_back("vm: explicit nested-call fixture did not initialize");
+						} else {
+							MochaVM::call(*module, *module->find_function("explicit_forward_wrong"), nested_owner.ptr(), nested_members,
+									nullptr, 0, call_error, failure);
+							if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
+									failure.preserve_call_error || !failure_at(failure, 105, 9)) {
+								failures.push_back("vm: explicit nested wrong argument leaked unsafe host call metadata");
+							}
+						}
+						nested_owner->set_script(godot::Variant());
+					}
 					invoke("dynamic_store", {}, call_error, failure);
-					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty()) failures.push_back("vm: dynamic store failure exposed an unsafe Godot call error");
+					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty() || !failure_at(failure, 46, 2)) failures.push_back("vm: dynamic store failure exposed an unsafe Godot call error or wrong span");
 					invoke("missing", { false }, call_error, failure);
-					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty()) failures.push_back("vm: typed fallthrough was not reported as a handled runtime failure");
+					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty() || !failure_at(failure, 40, 1)) failures.push_back("vm: typed fallthrough was not reported at 40:1");
 					invoke("exceed_operation_budget", {}, call_error, failure);
 					const int64_t touched_after_budget = members[module->find_member("touched")];
 					if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
-							!failure.message.contains("one million") || failure.span.line < 1 ||
+							!failure.message.contains("one million") || !failure_at(failure, 100, 18) ||
 							touched_after_budget <= 0 || touched_after_budget >= 200000) {
 						failures.push_back("vm: operation budget lacked its deterministic failure or mutation semantics");
 					}
 					invoke("recurse", {}, call_error, failure);
-					if (call_error.error != GDEXTENSION_CALL_OK || !failure.message.contains("depth") || failure.span.line < 1 || failure.span.column < 1) failures.push_back("vm: recursion limit lacked a source-located runtime failure");
+					if (call_error.error != GDEXTENSION_CALL_OK || !failure.message.contains("depth") || !failure_at(failure, 103, 9)) failures.push_back("vm: recursion limit did not fail at 103:9");
 				}
 			}
 		}
@@ -418,6 +452,42 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			bool found = false;
 			for (const Diagnostic &diagnostic : analyzer.get_diagnostics()) found |= diagnostic.code == "M2030";
 			if (!found) failures.push_back("analyzer: implicit-self initializer call did not produce M2030");
+		}
+	}
+
+	{
+		Program invalid;
+		MochaParser invalid_parser;
+		invalid_parser.parse("var first: String = later\nvar later = 1\n", "res://native_forward_inferred_member.mocha", invalid);
+		MochaAnalyzer analyzer;
+		if (analyzer.analyze(invalid, "res://native_forward_inferred_member.mocha") != godot::ERR_COMPILATION_FAILED) {
+			failures.push_back("analyzer: forward read of an uninferred member was accepted");
+		} else {
+			bool found = false;
+			for (const Diagnostic &diagnostic : analyzer.get_diagnostics()) {
+				found |= diagnostic.code == "M2032" && diagnostic.span.line == 1 && diagnostic.span.column == 21;
+			}
+			if (!found) failures.push_back("analyzer: forward uninferred member read did not produce M2032 at 1:21");
+		}
+	}
+
+	{
+		Program valid;
+		MochaParser parser;
+		const godot::String source =
+				"var flexible: Variant = 1\n"
+				"func change() -> Variant:\n"
+				"\tflexible = \"member\"\n"
+				"\tvar local: Variant = 2\n"
+				"\tlocal = \"local\"\n"
+				"\treturn local\n";
+		MochaAnalyzer analyzer;
+		if (parser.parse(source, "res://native_explicit_variant.mocha", valid) != godot::OK ||
+				analyzer.analyze(valid, "res://native_explicit_variant.mocha") != godot::OK ||
+				valid.members.empty() || valid.members[0].type.kind != TypeKind::ANY ||
+				valid.functions.empty() || valid.functions[0].body.size() < 2 ||
+				valid.functions[0].body[1]->declared_type.kind != TypeKind::ANY) {
+			failures.push_back("analyzer: explicit Variant declaration was narrowed by inference");
 		}
 	}
 

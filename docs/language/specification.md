@@ -50,11 +50,12 @@ index, and expected carrier while publishing the source-located Mocha failure. F
 nested Mocha call remain script runtime failures rather than being misattributed to the host caller.
 
 Untyped declarations infer and retain the initializer's static carrier type, so `var value = 1`
-cannot later store a `String` (`M2013`). Statically known conditions, logical operators, and logical
-negation require `bool` operands (`M2015`, `M2003`, and `M2002` respectively). A `Variant` operand
-remains dynamic and currently uses Godot `Variant::booleanize()` at runtime. `%` and `%=` are integer
-modulo operators, not String formatting (`M2003`). These strict static bootstrap rules are
-intentional MochaScript divergences and may evolve only through the divergence workflow.
+cannot later store a `String` (`M2013`); an explicit `: Variant` is never narrowed. Statically known
+conditions, logical operators, and logical negation require `bool` operands (`M2015`, `M2003`, and
+`M2002` respectively). A `Variant` operand remains dynamic and currently uses Godot
+`Variant::booleanize()` at runtime. `%` and `%=` are integer modulo operators, not String formatting
+(`M2003`). These strict static bootstrap rules are intentional MochaScript divergences and may
+evolve only through the divergence workflow.
 
 Typed declarations without an initializer receive carrier defaults (`false`, `0`, `0.0`, empty
 `String`, empty `Array`, empty `Dictionary`, or `null` for objects). An untyped `null` initializer
@@ -64,10 +65,12 @@ remains a high-precedence unary operator.
 
 Storage for every member is first populated with its carrier default, then initializers run in
 declaration order. An unqualified read of an earlier member sees its initialized value; a read of
-the current or a later member sees its carrier default. `self` is unavailable until Godot attaches
-the completed script instance, so `self`-qualified access and unqualified calls through implicit
-`self` are rejected statically with `M2030`. The self-free `mocha_language_version()` intrinsic is
-the sole unqualified-call exception during initialization.
+the current or a later explicitly typed member sees its carrier default. A forward read of an
+untyped member whose carrier has not yet been inferred is rejected with `M2032`, preventing analysis
+from accepting a `Variant` read that becomes a different runtime default. `self` is unavailable
+until Godot attaches the completed script instance, so `self`-qualified access and unqualified calls
+through implicit `self` are rejected statically with `M2030`. The self-free
+`mocha_language_version()` intrinsic is the sole unqualified-call exception during initialization.
 
 A script member may not reuse a property name exposed by its native base class or ancestors;
 analysis reports `M2031`. This prevents the script-instance property table from silently shadowing

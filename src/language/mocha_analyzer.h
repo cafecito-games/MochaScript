@@ -21,6 +21,7 @@ class MochaAnalyzer {
 	Program *program = nullptr;
 	String path;
 	HashMap<StringName, TypeRef> members;
+	HashMap<StringName, bool> pending_inferred_members;
 	std::vector<Diagnostic> diagnostics;
 	int expression_depth = 0;
 
