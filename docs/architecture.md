@@ -43,6 +43,8 @@ immediately invalidates and discards the old AST and module. A path-backed resou
 transactionally at once (including `CACHE_MODE_REPLACE`); a new in-memory resource becomes
 executable after its explicit reload. Replacing cached source while a runtime instance is alive
 fails with `ERR_ALREADY_IN_USE` and preserves the old source and executable module.
+`MochaScriptResourceSaver` persists source through Godot's `ResourceSaver`, so editor-created and
+editor-modified `.mocha` resources use the same load/compile path after saving.
 
 Each attached object receives a `MochaScriptInstance` containing its own member vector and a strong
 reference to the script. Godot reaches it through `GDExtensionScriptInstanceInfo3`; startup refuses

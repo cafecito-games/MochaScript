@@ -10,11 +10,13 @@
 #include "integration/mocha_script.h"
 #include "integration/mocha_script_language.h"
 #include "integration/mocha_script_resource_loader.h"
+#include "integration/mocha_script_resource_saver.h"
 #include "integration/mocha_script_instance.h"
 #include "testing/mocha_native_tests.h"
 
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
+#include <godot_cpp/classes/resource_saver.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/core/memory.hpp>
 #include <godot_cpp/godot.hpp>
@@ -24,6 +26,7 @@ namespace {
 
 mocha_script::MochaScriptLanguage *language = nullptr;
 godot::Ref<mocha_script::MochaScriptResourceLoader> resource_loader;
+godot::Ref<mocha_script::MochaScriptResourceSaver> resource_saver;
 
 } // namespace
 
@@ -39,6 +42,7 @@ void initialize_mocha_script(godot::ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(mocha_script::MochaScriptLanguage);
 	GDREGISTER_CLASS(mocha_script::MochaScript);
 	GDREGISTER_CLASS(mocha_script::MochaScriptResourceLoader);
+	GDREGISTER_CLASS(mocha_script::MochaScriptResourceSaver);
 	GDREGISTER_CLASS(mocha_script::MochaNativeTests);
 
 	language = memnew(mocha_script::MochaScriptLanguage);
@@ -53,6 +57,8 @@ void initialize_mocha_script(godot::ModuleInitializationLevel p_level) {
 
 	resource_loader.instantiate();
 	godot::ResourceLoader::get_singleton()->add_resource_format_loader(resource_loader, true);
+	resource_saver.instantiate();
+	godot::ResourceSaver::get_singleton()->add_resource_format_saver(resource_saver, true);
 }
 
 void uninitialize_mocha_script(godot::ModuleInitializationLevel p_level) {
@@ -63,6 +69,10 @@ void uninitialize_mocha_script(godot::ModuleInitializationLevel p_level) {
 	if (resource_loader.is_valid()) {
 		godot::ResourceLoader::get_singleton()->remove_resource_format_loader(resource_loader);
 		resource_loader.unref();
+	}
+	if (resource_saver.is_valid()) {
+		godot::ResourceSaver::get_singleton()->remove_resource_format_saver(resource_saver);
+		resource_saver.unref();
 	}
 
 	if (language != nullptr) {
