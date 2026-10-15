@@ -46,8 +46,9 @@ The command verifies both the immutable original import recorded in `source_impo
 candidate pinned source. It writes separate raw upstream-only (`*-upstream.patch`) and
 candidate-to-Mocha (`*-mocha.patch`) deltas under the user cache, and never modifies `src/` or
 fixtures. Each default invocation creates a unique report directory prefixed by the candidate Godot
-commit, so concurrent worktrees cannot mix results. The raw report is written first and remains
-available even when new upstream structure no
+commit, so concurrent worktrees cannot mix results; an explicitly supplied directory must be empty.
+Component stderr and exit status are saved with the reports. The raw report is written first and
+remains available even when new upstream structure no
 longer fits the recorded source transform; that condition leaves a per-file failure marker in the
 Mocha report, records nonzero component status in `README.txt`, and makes the command fail only after
 all available evidence has been saved.

@@ -9,6 +9,11 @@ custom_commit=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[
 godot_commit=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["godot"]["commit"])' "$repo_root/upstream.lock.json")
 if (( $# > 0 )); then
     report_root=$1
+    mkdir -p "$report_root"
+    if [[ -n $(find "$report_root" -mindepth 1 -maxdepth 1 -print -quit) ]]; then
+        echo "Explicit review directory must be empty: $report_root" >&2
+        exit 1
+    fi
 else
     mkdir -p "$cache_root/upstream-review"
     report_root=$(mktemp -d "$cache_root/upstream-review/$godot_commit.XXXXXX")
@@ -21,14 +26,16 @@ tokenizer_status=0
 python3 "$repo_root/scripts/import_gdscript.py" review tokenizer \
     --custom-godot "$source_root" \
     --output "$report_root/tokenizer-upstream.patch" \
-    --mocha-output "$report_root/tokenizer-mocha.patch" || tokenizer_status=$?
+    --mocha-output "$report_root/tokenizer-mocha.patch" \
+    2> >(tee "$report_root/tokenizer-review.log" >&2) || tokenizer_status=$?
 fixtures_status=0
 python3 "$repo_root/scripts/import_gdscript.py" review bootstrap-fixtures \
     --custom-godot "$source_root" \
     --output "$report_root/bootstrap-fixtures-upstream.patch" \
-    --mocha-output "$report_root/bootstrap-fixtures-mocha.patch" || fixtures_status=$?
+    --mocha-output "$report_root/bootstrap-fixtures-mocha.patch" \
+    2> >(tee "$report_root/bootstrap-fixtures-review.log" >&2) || fixtures_status=$?
 
-printf 'Generated upstream-only and Mocha-owned deltas for Godot %s.\nTokenizer review status: %s\nBootstrap fixture review status: %s\nNo MochaScript-owned source was overwritten.\n' \
+printf 'Attempted upstream-only and Mocha-owned reviews for Godot %s.\nTokenizer review status: %s\nBootstrap fixture review status: %s\nComponent logs record warnings or pre-report failures.\nNo MochaScript-owned source was overwritten.\n' \
     "$godot_commit" "$tokenizer_status" "$fixtures_status" >"$report_root/README.txt"
 
 echo "Review reports: $report_root"
