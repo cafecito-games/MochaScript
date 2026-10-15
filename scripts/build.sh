@@ -40,7 +40,12 @@ for argument in "$@"; do
             echo "Build job count is controlled only by the clamped MOCHA_JOBS value" >&2
             exit 2
             ;;
+        target=*)
+            echo "scripts/build.sh owns the required debug and release target matrix" >&2
+            exit 2
+            ;;
     esac
 done
 
-exec scons -C "$repo_root" target=template_debug -j"$jobs" "$@"
+scons -C "$repo_root" target=template_debug -j"$jobs" "$@"
+scons -C "$repo_root" target=template_release -j"$jobs" "$@"

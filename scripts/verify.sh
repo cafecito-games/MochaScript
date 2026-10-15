@@ -11,6 +11,15 @@ log_dir=$(mktemp -d "$cache_root/verify.XXXXXX")
 "$repo_root/scripts/setup.sh"
 "$repo_root/scripts/build.sh"
 
+for library in \
+    "$repo_root/project/bin/linux/libmocha_script.linux.template_debug.x86_64.so" \
+    "$repo_root/project/bin/linux/libmocha_script.linux.template_release.x86_64.so"; do
+    if [[ ! -f "$library" ]]; then
+        echo "Required extension artifact was not built: $library" >&2
+        exit 1
+    fi
+done
+
 editor_log="$log_dir/editor-import.log"
 editor_test_log="$log_dir/editor-test.log"
 recognition_log="$log_dir/recognition.log"
@@ -109,12 +118,16 @@ if grep -Eiq 'SCRIPT ERROR|ERROR:|crash|segmentation fault' "$editor_log" "$reco
     exit 1
 fi
 
-while IFS= read -r gd_script; do
-    if ! git -C "$repo_root" ls-files --error-unmatch "${gd_script}.uid" >/dev/null 2>&1; then
-        echo "Tracked GDScript is missing its committed UID sidecar: ${gd_script}.uid" >&2
-        exit 1
-    fi
-done < <(git -C "$repo_root" ls-files 'project/*.gd' 'project/**/*.gd')
+while IFS= read -r script_resource; do
+    case "$script_resource" in
+        *.gd|*.mocha|*.gdextension)
+            if ! git -C "$repo_root" ls-files --error-unmatch "${script_resource}.uid" >/dev/null 2>&1; then
+                echo "Tracked script resource is missing its committed UID sidecar: ${script_resource}.uid" >&2
+                exit 1
+            fi
+            ;;
+    esac
+done < <(git -C "$repo_root" ls-files project)
 
 untracked_uids=$(git -C "$repo_root" ls-files --others --exclude-standard -- '*.uid')
 if [[ -n "$untracked_uids" ]]; then

@@ -6,8 +6,9 @@ Run the complete local suite with:
 ./scripts/verify.sh
 ```
 
-It validates immutable pins, uses the cgroup CPU quota with a four-job ceiling, builds the extension,
-imports the fixture project, and runs these isolated sentinels exactly once:
+It validates immutable pins, uses the cgroup CPU quota with a four-job ceiling, builds debug and
+release extension libraries, imports the fixture project, and runs these isolated sentinels exactly
+once:
 
 - `MOCHA_RECOGNITION_OK`: language/resource identity and source preservation;
 - `MOCHA_EDITOR_OK`: non-tool scripts use placeholders and cannot instantiate in editor context,
@@ -33,3 +34,8 @@ binary SHA-256 from `upstream.lock.json`, then verifies both archive and executa
 Local verification hashes the resolved `godot` executable against the same binary pin. Configure
 `CUSTOM_GODOT_READ_TOKEN` as a read-only Actions secret. No credential or mutable latest-release URL
 is embedded in the repository.
+
+Godot resource identities are repository state. Every tracked `.gd`, `.mocha`, and `.gdextension`
+file under `project/` must have its generated `.uid` sidecar committed. The canonical verifier fails
+when one is missing or when an import leaves any untracked UID sidecar, so contributors should add
+new source resources and their sidecars together.
