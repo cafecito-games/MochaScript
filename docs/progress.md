@@ -19,6 +19,9 @@ Updated: 2026-10-15
 - `./scripts/verify.sh` is the canonical bootstrap verifier and emits `MOCHA_VERIFY_OK`.
 - The imported tokenizer, Mocha parser/AST, analyzer, compiler, bytecode VM, and complete
   `GDExtensionScriptInstanceInfo3` path execute without built-in GDScript delegation.
+- GDScript compatibility is a bootstrap reference point, not a compatibility contract: imported
+  code is Mocha-owned, upstream changes are review-only inputs, and deliberate semantic divergence
+  is versioned and tested in MochaScript itself.
 - `example.mocha` attaches to a Godot `Node`, calls `get_name()`, mutates a typed member, and returns
   deterministic result `42` using arrays, a dictionary, indexing, calls, and control flow.
 - Syntax and type fixtures assert stable codes plus source path, line, and column.
@@ -26,6 +29,12 @@ Updated: 2026-10-15
   canonical verifier; the imported fixtures are parse/analyze evidence, not runtime parity.
 - `mocha_language_version()` proves intentional Mocha-only evolution across all execution layers.
 - Source materialization, create-only import, and review-only upstream delta scripts are verified.
+- Explicit upstream review is read-only: it disables optional Git locks and lazy fetches, verifies
+  all required provenance objects locally, and keeps its coordination lock in MochaScript's cache.
+- Debug and release extension builds are isolated and exercised in copied Godot projects; the
+  release smoke test derives its library mapping from the manifest rather than assuming a filename.
+- The managed, hash-pinned SCons environment is reproducible under externally managed Python and
+  is insulated from user site tools, site directories, SCons flags, and SCons cache settings.
 - Linux CI pins the private custom-engine release asset by immutable ID and SHA-256.
 - A recursive clean clone builds from the tracked tree and passes `./scripts/verify.sh`.
 
@@ -50,11 +59,12 @@ Harden and expand the executable bootstrap subset while preserving the owned lan
 ## Known unsupported behavior
 
 The supported subset is listed in `docs/language/specification.md`. In particular, script
-inheritance, classes, signals, annotations/exports, `for`, `match`, async/coroutines, typed
+inheritance, classes, signals, annotations/exports, `for`, `match`, async/coroutines, runtime typed
 collection enforcement, index/member assignment, global utility functions, and editor completion
-remain unsupported. Recognized unsupported statements fail with `M1090`; top-level declaration
-gaps fail with `M1008`, invalid assignment targets with `M2090`, and compiler gaps with `M3xxx`
-rather than succeeding as no-ops.
+remain unsupported. Collection type parameters are retained and their nested type names are
+analyzed, but runtime values are currently erased to `Array`/`Dictionary`. Recognized unsupported
+statements fail with `M1090`; top-level declaration gaps fail with `M1008`, invalid assignment
+targets with `M2090`, and compiler gaps with `M3xxx` rather than succeeding as no-ops.
 
 ## Next action
 

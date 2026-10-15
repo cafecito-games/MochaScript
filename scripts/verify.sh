@@ -52,11 +52,11 @@ validate_uid_state() {
 
 snapshot_index_uids() {
     local uid_path
-    while IFS= read -r uid_path; do
+    while IFS= read -r -d '' uid_path; do
         local digest
         digest=$(git -C "$repo_root" show ":$uid_path" | sha256sum | cut -d' ' -f1)
         printf '%s  %s\n' "$digest" "${uid_path#project/}"
-    done < <(git -C "$repo_root" ls-files 'project/*.uid' 'project/**/*.uid')
+    done < <(git -C "$repo_root" ls-files -z 'project/*.uid' 'project/**/*.uid') | LC_ALL=C sort
 }
 
 snapshot_project_uids() {
@@ -66,7 +66,7 @@ snapshot_project_uids() {
         local digest
         digest=$(sha256sum "$uid_path" | cut -d' ' -f1)
         printf '%s  %s\n' "$digest" "${uid_path#"$project_root/"}"
-    done < <(find "$project_root" -path "$project_root/.godot" -prune -o -type f -name '*.uid' -print0 | sort -z)
+    done < <(find "$project_root" -path "$project_root/.godot" -prune -o -type f -name '*.uid' -print0 | LC_ALL=C sort -z) | LC_ALL=C sort
 }
 
 validate_uid_state

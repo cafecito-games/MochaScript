@@ -18,6 +18,10 @@ else
     report_root=$(mktemp -d "$cache_root/upstream-review/$godot_commit.XXXXXX")
 fi
 source_root=${MOCHA_CUSTOM_GODOT_SOURCE:-$cache_root/upstream/custom-godot-$custom_commit}
+if [[ -n ${MOCHA_CUSTOM_GODOT_SOURCE:-} ]]; then
+    export GIT_OPTIONAL_LOCKS=0
+    export GIT_NO_LAZY_FETCH=1
+fi
 
 materialize_status=0
 "$repo_root/scripts/materialize_upstream.sh" >"$report_root/materialize.log" 2>&1 || materialize_status=$?

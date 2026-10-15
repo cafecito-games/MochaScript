@@ -32,6 +32,16 @@ else:
     print("\n".join(sorted({record["godot_commit"] for record in provenance["components"].values()})))
 PY
 )
+readarray -t baseline_objects < <(python3 - "$repo_root/provenance/source_imports.json" <<'PY'
+import json, sys
+provenance = json.load(open(sys.argv[1]))
+for component in provenance["components"].values():
+    commit = component.get("godot_commit", provenance.get("godot_commit")) if isinstance(component, dict) else provenance["godot_commit"]
+    entries = component["entries"] if isinstance(component, dict) else component
+    for entry in entries:
+        print(f"{commit}:{entry['source']}")
+PY
+)
 explicit_source=false
 if [[ -n ${MOCHA_CUSTOM_GODOT_SOURCE:-} ]]; then
     target=$MOCHA_CUSTOM_GODOT_SOURCE
@@ -46,9 +56,19 @@ fi
 
 mkdir -p "$cache_base"
 target_parent=$(dirname "$target")
-mkdir -p "$target_parent"
 command -v flock >/dev/null || { echo "flock is required" >&2; exit 1; }
-lock_path="$target_parent/.$(basename "$target").lock"
+if [[ "$explicit_source" == true ]]; then
+    export GIT_OPTIONAL_LOCKS=0
+    export GIT_NO_LAZY_FETCH=1
+    explicit_lock_root="$cache_base/explicit-locks"
+    mkdir -p "$explicit_lock_root"
+    resolved_target=$(cd "$target" && pwd -P)
+    lock_key=$(printf '%s' "$resolved_target" | sha256sum | cut -d' ' -f1)
+    lock_path="$explicit_lock_root/$lock_key.lock"
+else
+    mkdir -p "$target_parent"
+    lock_path="$target_parent/.$(basename "$target").lock"
+fi
 exec {materialize_lock_fd}>"$lock_path"
 flock "$materialize_lock_fd"
 df -h "$cache_base"
@@ -139,6 +159,15 @@ for baseline_commit in "${baseline_commits[@]}"; do
         exit 1
     }
 done
+if [[ "$explicit_source" == true ]]; then
+    for baseline_object in "${baseline_objects[@]}"; do
+        if ! git -C "$godot_root" cat-file -e "$baseline_object" 2>/dev/null; then
+            echo "The explicitly supplied Godot checkout lacks provenance object $baseline_object." >&2
+            echo "Fetch the baseline objects manually before retrying; MochaScript will not modify this checkout." >&2
+            exit 1
+        fi
+    done
+fi
 
 python3 "$repo_root/scripts/inventory_upstream.py" --custom-godot "$target"
 echo "$target"

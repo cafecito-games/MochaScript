@@ -28,6 +28,8 @@ upstream-review command. Set
 the script refuses an explicitly selected checkout at another commit or with an uninitialized
 Godot submodule rather than checking out, sparsifying, fetching baseline objects into, or otherwise
 rewriting it. Explicit checkouts must already contain every provenance baseline commit.
+Their path-keyed coordination lock lives under MochaScript's user cache, never beside the checkout,
+and review disables optional Git locks and lazy object fetching.
 Concurrent materialization of the same pin is serialized with a checkout-specific file lock.
 The architecture inventory is informational: files renamed or removed by a candidate revision are
 listed as absent instead of stopping materialization. Component review likewise records a missing
