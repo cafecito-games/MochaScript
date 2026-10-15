@@ -17,16 +17,22 @@ source_root=${MOCHA_CUSTOM_GODOT_SOURCE:-$cache_root/upstream/custom-godot-$cust
 
 "$repo_root/scripts/materialize_upstream.sh" >/dev/null
 mkdir -p "$report_root"
+tokenizer_status=0
 python3 "$repo_root/scripts/import_gdscript.py" review tokenizer \
     --custom-godot "$source_root" \
     --output "$report_root/tokenizer-upstream.patch" \
-    --mocha-output "$report_root/tokenizer-mocha.patch"
+    --mocha-output "$report_root/tokenizer-mocha.patch" || tokenizer_status=$?
+fixtures_status=0
 python3 "$repo_root/scripts/import_gdscript.py" review bootstrap-fixtures \
     --custom-godot "$source_root" \
     --output "$report_root/bootstrap-fixtures-upstream.patch" \
-    --mocha-output "$report_root/bootstrap-fixtures-mocha.patch"
+    --mocha-output "$report_root/bootstrap-fixtures-mocha.patch" || fixtures_status=$?
 
-printf 'Generated upstream-only and Mocha-owned deltas for Godot %s.\nNo MochaScript-owned source was overwritten.\n' \
-    "$godot_commit" >"$report_root/README.txt"
+printf 'Generated upstream-only and Mocha-owned deltas for Godot %s.\nTokenizer review status: %s\nBootstrap fixture review status: %s\nNo MochaScript-owned source was overwritten.\n' \
+    "$godot_commit" "$tokenizer_status" "$fixtures_status" >"$report_root/README.txt"
 
 echo "Review reports: $report_root"
+if (( tokenizer_status != 0 || fixtures_status != 0 )); then
+    echo "One or more Mocha transforms failed; see the saved report markers." >&2
+    exit 2
+fi

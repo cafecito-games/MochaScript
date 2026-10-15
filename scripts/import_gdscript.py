@@ -264,11 +264,14 @@ def review(custom_godot: Path, component: str, lock: dict, output: Path | None,
     write_report(output, "".join(upstream_chunks), "upstream-only delta")
 
     mocha_chunks: list[str] = []
+    transform_failed = False
     for source, candidate_data in candidate_sources.items():
         relative = COMPONENTS[component][source]
         try:
             candidate_text = transform(source, candidate_data)
         except SystemExit as error:
+            transform_failed = True
+            mocha_chunks.append(f"# TRANSFORM FAILED for {source}: {error}\n")
             print(
                 f"warning: upstream-only report is complete, but the Mocha divergence "
                 f"transform failed for {source}: {error}",
@@ -287,7 +290,7 @@ def review(custom_godot: Path, component: str, lock: dict, output: Path | None,
         )
     if mocha_output:
         write_report(mocha_output, "".join(mocha_chunks), "Mocha-owned divergence delta")
-    return 0
+    return 2 if transform_failed else 0
 
 
 def main() -> int:
