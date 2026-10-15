@@ -6,17 +6,18 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cache_root=${XDG_CACHE_HOME:-${HOME}/.cache}/mochascript
 mkdir -p "$cache_root"
+log_dir=$(mktemp -d "$cache_root/verify.XXXXXX")
 
 "$repo_root/scripts/setup.sh"
 "$repo_root/scripts/build.sh"
 
-editor_log="$cache_root/editor-import.log"
-recognition_log="$cache_root/recognition.log"
-tokenizer_log="$cache_root/tokenizer.log"
-frontend_log="$cache_root/frontend.log"
-execution_log="$cache_root/execution.log"
-native_log="$cache_root/native.log"
-bootstrap_corpus_log="$cache_root/bootstrap-corpus.log"
+editor_log="$log_dir/editor-import.log"
+recognition_log="$log_dir/recognition.log"
+tokenizer_log="$log_dir/tokenizer.log"
+frontend_log="$log_dir/frontend.log"
+execution_log="$log_dir/execution.log"
+native_log="$log_dir/native.log"
+bootstrap_corpus_log="$log_dir/bootstrap-corpus.log"
 
 run_godot() {
     local label=$1
@@ -28,7 +29,8 @@ run_godot() {
     set -e
     if (( status != 0 )); then
         echo "Godot $label failed with status $status" >&2
-        sed -n '1,260p' "$log" >&2
+        echo "Verification logs: $log_dir" >&2
+        cat "$log" >&2
         exit 1
     fi
 }
@@ -44,42 +46,42 @@ run_godot "bootstrap corpus test" "$bootstrap_corpus_log" --script res://tests/b
 sentinel_count=$(grep -c '^MOCHA_RECOGNITION_OK$' "$recognition_log" || true)
 if [[ "$sentinel_count" != "1" ]]; then
     echo "Expected exactly one MOCHA_RECOGNITION_OK sentinel; got $sentinel_count" >&2
-    sed -n '1,200p' "$recognition_log" >&2
+    cat "$recognition_log" >&2
     exit 1
 fi
 
 tokenizer_sentinel_count=$(grep -c '^MOCHA_TOKENIZER_OK$' "$tokenizer_log" || true)
 if [[ "$tokenizer_sentinel_count" != "1" ]]; then
     echo "Expected exactly one MOCHA_TOKENIZER_OK sentinel; got $tokenizer_sentinel_count" >&2
-    sed -n '1,200p' "$tokenizer_log" >&2
+    cat "$tokenizer_log" >&2
     exit 1
 fi
 
 frontend_sentinel_count=$(grep -c '^MOCHA_FRONTEND_OK$' "$frontend_log" || true)
 if [[ "$frontend_sentinel_count" != "1" ]]; then
     echo "Expected exactly one MOCHA_FRONTEND_OK sentinel; got $frontend_sentinel_count" >&2
-    sed -n '1,240p' "$frontend_log" >&2
+    cat "$frontend_log" >&2
     exit 1
 fi
 
 execution_sentinel_count=$(grep -c '^MOCHA_EXECUTION_OK$' "$execution_log" || true)
 if [[ "$execution_sentinel_count" != "1" ]]; then
     echo "Expected exactly one MOCHA_EXECUTION_OK sentinel; got $execution_sentinel_count" >&2
-    sed -n '1,260p' "$execution_log" >&2
+    cat "$execution_log" >&2
     exit 1
 fi
 
 native_sentinel_count=$(grep -c '^MOCHA_NATIVE_OK$' "$native_log" || true)
 if [[ "$native_sentinel_count" != "1" ]]; then
     echo "Expected exactly one MOCHA_NATIVE_OK sentinel; got $native_sentinel_count" >&2
-    sed -n '1,260p' "$native_log" >&2
+    cat "$native_log" >&2
     exit 1
 fi
 
 bootstrap_sentinel_count=$(grep -c '^MOCHA_BOOTSTRAP_CORPUS_OK$' "$bootstrap_corpus_log" || true)
 if [[ "$bootstrap_sentinel_count" != "1" ]]; then
     echo "Expected exactly one MOCHA_BOOTSTRAP_CORPUS_OK sentinel; got $bootstrap_sentinel_count" >&2
-    sed -n '1,260p' "$bootstrap_corpus_log" >&2
+    cat "$bootstrap_corpus_log" >&2
     exit 1
 fi
 
