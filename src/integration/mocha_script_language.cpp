@@ -63,9 +63,7 @@ godot::Dictionary MochaScriptLanguage::_validate(const godot::String &p_script, 
 	godot::Ref<MochaScript> script;
 	script.instantiate();
 	script->_set_source_code(p_script);
-	if (!p_path.is_empty()) {
-		script->set_path(p_path);
-	}
+	script->set_diagnostic_path_for_validation(p_path);
 	script->_reload(false);
 
 	godot::Dictionary result;

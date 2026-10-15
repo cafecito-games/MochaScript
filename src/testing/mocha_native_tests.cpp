@@ -11,9 +11,11 @@
 #include "language/mocha_compiler.h"
 #include "language/mocha_parser.h"
 #include "language/mocha_tokenizer.h"
+#include "integration/mocha_script_language.h"
 #include "runtime/mocha_vm.h"
 
 #include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/classes/resource_loader.hpp>
 
 namespace mocha_script {
 
@@ -38,6 +40,23 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			if (actual.type != type) {
 				failures.push_back(godot::vformat("tokenizer: expected %s, received %s", MochaTokenizer::get_token_name(type), actual.get_debug_name()));
 				break;
+			}
+		}
+	}
+
+	{
+		// Keep a real resource cached at the validation path. Validation must use the
+		// supplied diagnostic path without trying to occupy that ResourceCache key.
+		const godot::Ref<godot::Resource> cached = godot::ResourceLoader::get_singleton()->load("res://example.mocha");
+		MochaScriptLanguage *language = MochaScriptLanguage::get_singleton();
+		if (cached.is_null() || language == nullptr) {
+			failures.push_back("language: could not establish cached validation fixture");
+		} else {
+			const godot::Dictionary result = language->_validate("var label: String = 42\n", "res://example.mocha", true, true, true, true);
+			const godot::TypedArray<godot::Dictionary> errors = result["errors"];
+			const godot::Dictionary first_error = errors.is_empty() ? godot::Dictionary() : godot::Dictionary(errors[0]);
+			if (bool(result["valid"]) || first_error.is_empty() || first_error.get("path", "") != "res://example.mocha") {
+				failures.push_back("language: validation did not preserve the requested diagnostic path");
 			}
 		}
 	}
@@ -93,6 +112,12 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			"func class_text() -> String:\n"
 			"\tvar value: String = get_class()\n"
 			"\treturn value\n"
+			"func dynamic_sum() -> Variant:\n"
+			"\tvar values: Array = [1.25, 2.25]\n"
+			"\tvar result = values[0] + values[1]\n"
+			"\treturn result\n"
+			"func dynamic_suffix(value: Variant) -> Variant:\n"
+			"\treturn value + \"!\"\n"
 			"func recurse() -> int:\n"
 			"\treturn recurse()\n";
 	Program program;
@@ -164,13 +189,65 @@ godot::PackedStringArray MochaNativeTests::run() const {
 					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(false)) failures.push_back("parser: 'not' comparison precedence is incorrect");
 					result = invoke("class_text", {}, call_error, failure);
 					if (call_error.error != GDEXTENSION_CALL_OK || result.get_type() != godot::Variant::STRING) failures.push_back("vm: StringName was not converted for a String local");
+					result = invoke("dynamic_sum", {}, call_error, failure);
+					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(3.5)) failures.push_back("analyzer: Variant arithmetic was incorrectly narrowed");
+					result = invoke("dynamic_suffix", { godot::String("Mocha") }, call_error, failure);
+					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant("Mocha!")) failures.push_back("analyzer: Variant plus String was rejected or narrowed");
+					invoke("add", { godot::String("wrong") }, call_error, failure);
+					if (call_error.error != GDEXTENSION_CALL_ERROR_INVALID_ARGUMENT || failure.message.is_empty()) failures.push_back("vm: wrong external argument did not preserve INVALID_ARGUMENT");
 					invoke("dynamic_store", {}, call_error, failure);
-					if (call_error.error == GDEXTENSION_CALL_OK || failure.message.is_empty()) failures.push_back("vm: dynamically wrong typed local store succeeded");
+					if (call_error.error != GDEXTENSION_CALL_ERROR_INVALID_ARGUMENT || failure.message.is_empty()) failures.push_back("vm: dynamically wrong typed local store did not preserve INVALID_ARGUMENT");
 					invoke("missing", { false }, call_error, failure);
 					if (call_error.error == GDEXTENSION_CALL_OK || failure.message.is_empty()) failures.push_back("vm: typed function fell off the end successfully");
 					invoke("recurse", {}, call_error, failure);
 					if (call_error.error == GDEXTENSION_CALL_OK || !failure.message.contains("depth")) failures.push_back("vm: recursion limit did not propagate as a call failure");
 				}
+			}
+		}
+	}
+
+	{
+		Program invalid;
+		MochaParser parser;
+		if (parser.parse("extends RefCounted\n\tvar value = 1\n", "res://native_overindent.mocha", invalid) != godot::ERR_PARSE_ERROR ||
+				parser.get_diagnostics().empty() || parser.get_diagnostics()[0].code != "M1008") {
+			failures.push_back("parser: stray top-level indentation did not terminate with M1008");
+		}
+	}
+
+	{
+		godot::String source = "func too_deep() -> Variant:\n\treturn ";
+		for (int i = 0; i < 300; ++i) source += "(";
+		source += "1";
+		for (int i = 0; i < 300; ++i) source += ")";
+		source += "\n";
+		Program invalid;
+		MochaParser parser;
+		if (parser.parse(source, "res://native_deep_expression.mocha", invalid) != godot::ERR_PARSE_ERROR) {
+			failures.push_back("parser: excessively nested expression was accepted");
+		} else {
+			bool found = false;
+			for (const Diagnostic &diagnostic : parser.get_diagnostics()) found |= diagnostic.code == "M1009";
+			if (!found) failures.push_back("parser: deep expression did not produce M1009");
+		}
+	}
+
+	{
+		godot::String source = "func too_wide() -> Variant:\n\treturn 1";
+		for (int i = 0; i < 300; ++i) source += "+1";
+		source += "\n";
+		Program invalid;
+		MochaParser parser;
+		if (parser.parse(source, "res://native_deep_ast.mocha", invalid) != godot::OK) {
+			failures.push_back("parser: long flat expression fixture failed before analysis");
+		} else {
+			MochaAnalyzer analyzer;
+			if (analyzer.analyze(invalid, "res://native_deep_ast.mocha") != godot::ERR_COMPILATION_FAILED) {
+				failures.push_back("analyzer: excessively deep expression tree was accepted");
+			} else {
+				bool found = false;
+				for (const Diagnostic &diagnostic : analyzer.get_diagnostics()) found |= diagnostic.code == "M2028";
+				if (!found) failures.push_back("analyzer: deep expression tree did not produce M2028");
 			}
 		}
 	}

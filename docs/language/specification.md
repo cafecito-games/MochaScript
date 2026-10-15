@@ -38,6 +38,9 @@ remains `Variant` instead of creating an unusable null-only type. `and`/`or` and
 short-circuit. Word-form `not` binds below comparison/containment and above `and`; symbolic `!`
 remains a high-precedence unary operator.
 
+The bootstrap frontend rejects recursively nested expressions or expression trees deeper than 256
+nodes with stable parser/analyzer diagnostics instead of risking the native stack.
+
 ## Unsupported now
 
 Classes, inheritance between scripts, constants, enums, signals, annotations, exports, properties,

@@ -97,6 +97,7 @@ void *MochaScript::_instance_create(godot::Object *p_for_object) const {
 	RuntimeFailure failure;
 	if (MochaVM::initialize(*module, p_for_object, instance->members, failure) != godot::OK) {
 		godot::UtilityFunctions::push_error(godot::vformat("%s:%d:%d: %s: %s", get_path(), failure.span.line, failure.span.column, failure.code, failure.message));
+		failure.reported = true;
 		MochaVM::publish_nested_failure(failure);
 		const_cast<MochaScript *>(this)->instances.erase(instance);
 		memdelete(instance);
@@ -149,6 +150,9 @@ godot::Error MochaScript::_reload(bool) {
 	diagnostics.clear();
 	program.reset();
 	compiled_module.reset();
+	const godot::String source_path = !diagnostic_path.is_empty()
+			? diagnostic_path
+			: (get_path().is_empty() ? godot::String("<memory>") : get_path());
 
 	auto append_diagnostic = [this](const Diagnostic &p_source) {
 		godot::Dictionary diagnostic;
@@ -173,7 +177,7 @@ godot::Error MochaScript::_reload(bool) {
 		if (token.type == MochaTokenizer::Token::ERROR) {
 			valid = false;
 			append_diagnostic({ "M0001", godot::String(token.literal),
-					get_path().is_empty() ? godot::String("<memory>") : get_path(), span_from_token(token) });
+					source_path, span_from_token(token) });
 		}
 		if (token.type == MochaTokenizer::Token::TK_EOF) {
 			break;
@@ -181,7 +185,6 @@ godot::Error MochaScript::_reload(bool) {
 	}
 	if (!valid) return godot::ERR_PARSE_ERROR;
 
-	const godot::String source_path = get_path().is_empty() ? godot::String("<memory>") : get_path();
 	auto parsed = std::make_shared<Program>();
 	MochaParser parser;
 	const godot::Error parse_status = parser.parse(source_code, source_path, *parsed);

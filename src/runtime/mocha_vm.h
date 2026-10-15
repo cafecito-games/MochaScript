@@ -18,6 +18,7 @@ struct RuntimeFailure {
 	String code;
 	String message;
 	SourceSpan span;
+	bool reported = false;
 };
 
 class MochaVM {

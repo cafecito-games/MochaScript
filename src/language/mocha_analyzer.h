@@ -21,6 +21,7 @@ class MochaAnalyzer {
 	String path;
 	HashMap<StringName, TypeRef> members;
 	std::vector<Diagnostic> diagnostics;
+	int expression_depth = 0;
 
 	void report(const SourceSpan &p_span, const String &p_code, const String &p_message);
 	const FunctionDecl *find_function(const StringName &p_name) const;

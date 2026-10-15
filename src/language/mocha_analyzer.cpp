@@ -13,6 +13,13 @@ namespace mocha_script {
 
 namespace {
 
+constexpr int MAX_ANALYSIS_EXPRESSION_DEPTH = 256;
+
+struct AnalysisDepthScope {
+	int &depth;
+	~AnalysisDepthScope() { depth--; }
+};
+
 TypeRef type_of_literal(const Variant &p_value) {
 	switch (p_value.get_type()) {
 		case Variant::NIL: return TypeRef::make(TypeKind::NIL, "null");
@@ -82,6 +89,13 @@ void MochaAnalyzer::validate_type(const TypeRef &p_type, const SourceSpan &p_spa
 
 TypeRef MochaAnalyzer::analyze_expression(ExprPtr &p_expression, Context &r_context, bool p_value_required) {
 	if (!p_expression) return TypeRef::any();
+	if (++expression_depth > MAX_ANALYSIS_EXPRESSION_DEPTH) {
+		expression_depth--;
+		report(p_expression->span, "M2028", vformat("Expression tree exceeds the analysis limit of %d.", MAX_ANALYSIS_EXPRESSION_DEPTH));
+		p_expression->inferred_type = TypeRef::any();
+		return TypeRef::any();
+	}
+	AnalysisDepthScope depth_scope{ expression_depth };
 	TypeRef result = TypeRef::any();
 	switch (p_expression->kind) {
 		case ExprKind::LITERAL:
@@ -142,6 +156,10 @@ TypeRef MochaAnalyzer::analyze_expression(ExprPtr &p_expression, Context &r_cont
 					}
 					[[fallthrough]];
 				default:
+					if (left.kind == TypeKind::ANY || right.kind == TypeKind::ANY) {
+						result = TypeRef::any();
+						break;
+					}
 					if (!numeric(left) || !numeric(right)) {
 						report(p_expression->span, "M2003", "This binary operator requires compatible numeric operands.");
 					}
@@ -267,6 +285,7 @@ Error MochaAnalyzer::analyze(Program &p_program, const String &p_path) {
 	path = p_path.is_empty() ? String("<memory>") : p_path;
 	members.clear();
 	diagnostics.clear();
+	expression_depth = 0;
 	if (!ClassDB::class_exists(p_program.base_type)) {
 		report({}, "M2025", vformat("Unknown or unsupported base class '%s'.", String(p_program.base_type)));
 	}

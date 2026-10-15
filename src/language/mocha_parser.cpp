@@ -14,6 +14,12 @@ namespace mocha_script {
 namespace {
 
 using Token = MochaTokenizer::Token;
+constexpr int MAX_EXPRESSION_DEPTH = 256;
+
+struct ExpressionDepthScope {
+	int &depth;
+	~ExpressionDepthScope() { depth--; }
+};
 
 SourceSpan merge_span(const SourceSpan &p_first, const SourceSpan &p_last) {
 	return { p_first.line, p_first.column, p_last.end_line, p_last.end_column };
@@ -337,6 +343,13 @@ bool MochaParser::is_assignment(Token::Type p_type) const {
 }
 
 ExprPtr MochaParser::parse_expression(int p_min_precedence) {
+	if (++expression_depth > MAX_EXPRESSION_DEPTH) {
+		expression_depth--;
+		error_at(peek(), "M1009", vformat("Expression nesting exceeds the limit of %d.", MAX_EXPRESSION_DEPTH));
+		if (!at_end()) advance();
+		return {};
+	}
+	ExpressionDepthScope depth_scope{ expression_depth };
 	ExprPtr left = parse_unary();
 	if (!left) return {};
 	while (true) {
@@ -356,6 +369,13 @@ ExprPtr MochaParser::parse_expression(int p_min_precedence) {
 }
 
 ExprPtr MochaParser::parse_unary() {
+	if (++expression_depth > MAX_EXPRESSION_DEPTH) {
+		expression_depth--;
+		error_at(peek(), "M1009", vformat("Expression nesting exceeds the limit of %d.", MAX_EXPRESSION_DEPTH));
+		if (!at_end()) advance();
+		return {};
+	}
+	ExpressionDepthScope depth_scope{ expression_depth };
 	if (match(Token::NOT)) {
 		const Token operation = previous();
 		// Word-form `not` binds below equality/comparison/containment but above
@@ -478,6 +498,7 @@ Error MochaParser::parse(const String &p_source, const String &p_path, Program &
 	tokens.clear();
 	diagnostics.clear();
 	current = 0;
+	expression_depth = 0;
 	r_program = Program();
 
 	MochaTokenizerText tokenizer;
@@ -508,7 +529,10 @@ Error MochaParser::parse(const String &p_source, const String &p_path, Program &
 	while (!at_end()) {
 		skip_newlines();
 		if (at_end()) break;
-		if (match(Token::VAR)) {
+		if (check(Token::INDENT) || check(Token::DEDENT)) {
+			error_at(peek(), "M1008", vformat("Unexpected top-level indentation token %s.", token_text(peek())));
+			advance();
+		} else if (match(Token::VAR)) {
 			parse_member(r_program);
 		} else if (match(Token::FUNC)) {
 			parse_function(r_program);

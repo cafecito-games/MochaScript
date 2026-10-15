@@ -20,6 +20,7 @@ class MochaScript final : public godot::ScriptExtension {
 	GDCLASS(MochaScript, godot::ScriptExtension)
 
 	godot::String source_code;
+	godot::String diagnostic_path;
 	bool valid = false;
 	int64_t token_count = 0;
 	godot::TypedArray<godot::Dictionary> diagnostics;
@@ -34,6 +35,7 @@ public:
 	int64_t get_token_count() const;
 	godot::TypedArray<godot::Dictionary> get_diagnostics() const;
 	bool is_compilation_valid() const;
+	void set_diagnostic_path_for_validation(const godot::String &p_path) { diagnostic_path = p_path; }
 	const Program *get_program() const { return program.get(); }
 	const CompiledModule *get_compiled_module() const { return compiled_module.get(); }
 	std::shared_ptr<CompiledModule> retain_compiled_module() const { return compiled_module; }

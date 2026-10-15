@@ -404,13 +404,19 @@ Variant MochaScriptInstance::call(const StringName &p_method, const Variant **p_
 	Variant result = MochaVM::call(*module, *function, owner, members,
 			p_arguments, p_argument_count, r_error, failure);
 	if (!failure.message.is_empty()) {
-		UtilityFunctions::push_error(vformat("%s:%d:%d: %s: %s", script->get_path(), failure.span.line,
-				failure.span.column, failure.code, failure.message));
+		if (!failure.reported) {
+			UtilityFunctions::push_error(vformat("%s:%d:%d: %s: %s", script->get_path(), failure.span.line,
+					failure.span.column, failure.code, failure.message));
+			failure.reported = true;
+		}
 		MochaVM::publish_nested_failure(failure);
 		// INVALID_METHOD makes Object::callp fall through to a same-named native
-		// method. The Mocha method existed and already reported its runtime error,
-		// so return nil as a handled call instead.
-		r_error.error = GDEXTENSION_CALL_OK;
+		// method. This Mocha method existed, so retain every other precise call
+		// error and map only INVALID_METHOD to a handled failure category.
+		if (r_error.error == GDEXTENSION_CALL_ERROR_INVALID_METHOD) {
+			r_error.error = GDEXTENSION_CALL_ERROR_INVALID_ARGUMENT;
+			r_error.argument = -1;
+		}
 	}
 	return result;
 }
