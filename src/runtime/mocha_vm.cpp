@@ -447,13 +447,13 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				if (!pop(instruction, key) || !pop(instruction, container)) return {};
 				bool valid = false;
 				Variant value;
-					if (container.get_type() == Variant::OBJECT) {
+				if (container.get_type() == Variant::OBJECT) {
 					// Property access may execute arbitrary engine callbacks. This shield
 					// prevents their failures from leaking into an enclosing direct call.
-						MochaNestedFailureShield shield;
+					MochaNestedFailureShield shield;
 					value = container.get(key, &valid);
-					} else {
-						value = container.get(key, &valid);
+				} else {
+					value = container.get(key, &valid);
 				}
 				if (!owner_is_alive()) { fail(r_failure, instruction.span, "The MochaScript owner was freed during an index operation."); return {}; }
 				if (!valid) { fail(r_failure, instruction.span, "Invalid index operation in MochaScript."); return {}; }
@@ -464,12 +464,12 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				if (!pop(instruction, receiver)) return {};
 				bool valid = false;
 				Variant value;
-					if (receiver.get_type() == Variant::OBJECT) {
+				if (receiver.get_type() == Variant::OBJECT) {
 					// This is a callback shield, not a direct Mocha call capture.
-						MochaNestedFailureShield shield;
+					MochaNestedFailureShield shield;
 					value = receiver.get_named(instruction.name, valid);
-					} else {
-						value = receiver.get_named(instruction.name, valid);
+				} else {
+					value = receiver.get_named(instruction.name, valid);
 				}
 				if (!owner_is_alive()) { fail(r_failure, instruction.span, "The MochaScript owner was freed during a member read."); return {}; }
 				if (!valid) { fail(r_failure, instruction.span, vformat("Value has no member '%s'.", String(instruction.name))); return {}; }
@@ -497,11 +497,11 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				else if (!variant_operator(instruction.operation, operation)) { fail(r_failure, instruction.span, "Unsupported unary bytecode operator."); return {}; }
 				Variant result;
 				bool valid = false;
-					if (value.get_type() == Variant::OBJECT) {
-						MochaNestedFailureShield shield;
+				if (value.get_type() == Variant::OBJECT) {
+					MochaNestedFailureShield shield;
 					Variant::evaluate(operation, value, Variant(), result, valid);
-					} else {
-						Variant::evaluate(operation, value, Variant(), result, valid);
+				} else {
+					Variant::evaluate(operation, value, Variant(), result, valid);
 				}
 				if (!owner_is_alive()) { fail(r_failure, instruction.span, "The MochaScript owner was freed during a unary operation."); return {}; }
 				if (!valid) { fail(r_failure, instruction.span, "Invalid unary operation in MochaScript."); return {}; }
@@ -531,11 +531,11 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				if (!variant_operator(instruction.operation, operation)) { fail(r_failure, instruction.span, "Unsupported binary bytecode operator."); return {}; }
 				Variant result;
 				bool valid = false;
-					if (left.get_type() == Variant::OBJECT || right.get_type() == Variant::OBJECT) {
-						MochaNestedFailureShield shield;
+				if (left.get_type() == Variant::OBJECT || right.get_type() == Variant::OBJECT) {
+					MochaNestedFailureShield shield;
 					Variant::evaluate(operation, left, right, result, valid);
-					} else {
-						Variant::evaluate(operation, left, right, result, valid);
+				} else {
+					Variant::evaluate(operation, left, right, result, valid);
 				}
 				if (!owner_is_alive()) { fail(r_failure, instruction.span, "The MochaScript owner was freed during a binary operation."); return {}; }
 				if (!valid) { fail(r_failure, instruction.span, "Invalid binary operation in MochaScript."); return {}; }

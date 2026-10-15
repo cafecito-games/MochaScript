@@ -21,6 +21,7 @@ protected:
 	bool multiple_failure_probe() const;
 	bool shielded_failure_probe() const;
 	bool initializer_mismatch_probe() const;
+	int64_t get_shielded_value() const;
 
 public:
 	godot::PackedStringArray run() const;

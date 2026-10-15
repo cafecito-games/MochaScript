@@ -32,6 +32,9 @@ void MochaNativeTests::_bind_methods() {
 	godot::ClassDB::bind_method(godot::D_METHOD("multiple_failure_probe"), &MochaNativeTests::multiple_failure_probe);
 	godot::ClassDB::bind_method(godot::D_METHOD("shielded_failure_probe"), &MochaNativeTests::shielded_failure_probe);
 	godot::ClassDB::bind_method(godot::D_METHOD("initializer_mismatch_probe"), &MochaNativeTests::initializer_mismatch_probe);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_shielded_value"), &MochaNativeTests::get_shielded_value);
+	godot::ClassDB::add_property("MochaNativeTests",
+			godot::PropertyInfo(godot::Variant::INT, "shielded_value"), godot::StringName(), "get_shielded_value");
 }
 
 bool MochaNativeTests::mismatched_failure_probe() const {
@@ -69,6 +72,16 @@ bool MochaNativeTests::initializer_mismatch_probe() const {
 	failure.code = "M4001";
 	failure.message = "unrelated initializer failure";
 	return MochaVM::publish_nested_failure(failure, get_instance_id(), StringName());
+}
+
+int64_t MochaNativeTests::get_shielded_value() const {
+	RuntimeFailure failure;
+	failure.code = "M4001";
+	failure.message = "property callback failure";
+	MochaVM::publish_nested_failure(failure, get_instance_id(), "shield_reader");
+	MochaVM::publish_nested_failure(failure, get_instance_id(), "shield_index_reader");
+	MochaVM::publish_nested_failure(failure, get_instance_id(), "shield_in_reader");
+	return 42;
 }
 
 godot::PackedStringArray MochaNativeTests::run() const {
@@ -331,7 +344,19 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			"func callback_initializer_mismatch() -> bool:\n"
 			"\treturn initializer_mismatch_probe()\n"
 			"func direct_set_script(script: Variant) -> void:\n"
-			"\tset_script(script)\n";
+			"\tset_script(script)\n"
+			"func shield_reader(probe: Variant) -> int:\n"
+			"\treturn probe.shielded_value\n"
+			"func shield_outer() -> int:\n"
+			"\treturn self.call(\"shield_reader\", self)\n"
+			"func shield_index_reader(probe: Variant) -> int:\n"
+			"\treturn probe[\"shielded_value\"]\n"
+			"func shield_index_outer() -> int:\n"
+			"\treturn self.call(\"shield_index_reader\", self)\n"
+			"func shield_in_reader(probe: Variant) -> bool:\n"
+			"\treturn \"shielded_value\" in probe\n"
+			"func shield_in_outer() -> bool:\n"
+			"\treturn self.call(\"shield_in_reader\", self)\n";
 	Program program;
 	MochaParser parser;
 	if (parser.parse(executable, "res://native_pipeline.mocha", program) != godot::OK) {
@@ -547,6 +572,32 @@ godot::PackedStringArray MochaNativeTests::run() const {
 									failures.push_back("vm: direct set_script did not propagate an initializer failure");
 								}
 							}
+							godot::Ref<MochaNativeTests> shield_owner;
+							shield_owner.instantiate();
+							shield_owner->set_script(nested_script);
+							godot::Vector<godot::Variant> shield_members;
+							RuntimeFailure shield_initialization_failure;
+							if (shield_owner->get_script() != nested_script ||
+									MochaVM::initialize(*module, shield_owner.ptr(), shield_members, shield_initialization_failure) != godot::OK) {
+								failures.push_back("vm: real callback-shield fixture did not initialize");
+							} else {
+								result = MochaVM::call(*module, *module->find_function("shield_outer"), shield_owner.ptr(),
+										shield_members, nullptr, 0, call_error, failure);
+								if (call_error.error != GDEXTENSION_CALL_OK || !failure.message.is_empty() || result != godot::Variant(int64_t(42))) {
+									failures.push_back("vm: GET_NAMED object callback bypassed its real failure shield");
+								}
+								result = MochaVM::call(*module, *module->find_function("shield_index_outer"), shield_owner.ptr(),
+										shield_members, nullptr, 0, call_error, failure);
+								if (call_error.error != GDEXTENSION_CALL_OK || !failure.message.is_empty() || result != godot::Variant(int64_t(42))) {
+									failures.push_back("vm: GET_INDEX object callback bypassed its real failure shield");
+								}
+								result = MochaVM::call(*module, *module->find_function("shield_in_outer"), shield_owner.ptr(),
+										shield_members, nullptr, 0, call_error, failure);
+								if (call_error.error != GDEXTENSION_CALL_OK || !failure.message.is_empty() || result != godot::Variant(true)) {
+									failures.push_back("vm: object membership callback bypassed its real failure shield");
+								}
+							}
+							shield_owner->set_script(godot::Variant());
 						}
 						nested_owner->set_script(godot::Variant());
 					}
