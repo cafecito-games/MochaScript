@@ -5,7 +5,6 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cache_base=${XDG_CACHE_HOME:-${HOME}/.cache}/mochascript/upstream
-target=${MOCHA_CUSTOM_GODOT_SOURCE:-$cache_base/custom-godot}
 
 readarray -t pins < <(python3 - "$repo_root/upstream.lock.json" <<'PY'
 import json, sys
@@ -24,6 +23,7 @@ custom_commit=${pins[2]}
 godot_remote=${pins[3]}
 godot_tag=${pins[4]}
 godot_commit=${pins[5]}
+target=${MOCHA_CUSTOM_GODOT_SOURCE:-$cache_base/custom-godot-$custom_commit}
 
 mkdir -p "$cache_base"
 target_parent=$(dirname "$target")

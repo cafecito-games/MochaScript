@@ -17,10 +17,10 @@ Godot, godot-cpp-template, and BaristaScript attribution.
 ./scripts/materialize_upstream.sh
 ```
 
-This materializes immutable checkouts under the persistent user cache, verifies commits, patcher
-configuration, relevant patch hashes, and every imported file hash. Set
-`MOCHA_CUSTOM_GODOT_SOURCE` to use an existing checkout. The script refuses an existing checkout at
-another commit rather than rewriting it.
+This materializes immutable checkouts under a commit-keyed directory in the persistent user cache,
+verifies commits, patcher configuration, relevant patch hashes, and every imported file hash. Set
+`MOCHA_CUSTOM_GODOT_SOURCE` to use an existing checkout. Each pin gets a separate default checkout;
+the script refuses an explicitly selected checkout at another commit rather than rewriting it.
 
 The original component imports were:
 

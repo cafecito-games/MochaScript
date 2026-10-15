@@ -6,7 +6,8 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cache_root=${XDG_CACHE_HOME:-${HOME}/.cache}/mochascript
 report_root=${1:-$cache_root/upstream-review}
-source_root=${MOCHA_CUSTOM_GODOT_SOURCE:-$cache_root/upstream/custom-godot}
+custom_commit=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["custom_godot"]["commit"])' "$repo_root/upstream.lock.json")
+source_root=${MOCHA_CUSTOM_GODOT_SOURCE:-$cache_root/upstream/custom-godot-$custom_commit}
 
 "$repo_root/scripts/materialize_upstream.sh" >/dev/null
 mkdir -p "$report_root"
