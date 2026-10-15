@@ -48,9 +48,6 @@ public:
 	/** True when every callback slot the engine may call is filled. Checked at extension startup. */
 	static bool vtable_is_complete();
 
-	/** The instance attached to `p_owner`, or null when its script is not a MochaScript. */
-	static MochaScriptInstance *from_owner(const Object *p_owner);
-
 	Variant call(const StringName &p_method, const Variant **p_arguments, int p_argument_count, GDExtensionCallError &r_error);
 	void notification(int p_what, bool p_reversed);
 	bool set_property(const StringName &p_name, const Variant &p_value);

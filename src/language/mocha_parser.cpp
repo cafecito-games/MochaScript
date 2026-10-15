@@ -136,6 +136,16 @@ bool MochaParser::consume_identifier(StringName &r_name, const String &p_context
 	return true;
 }
 
+bool MochaParser::consume_member_name(StringName &r_name) {
+	if (!peek().is_identifier()) {
+		error_at(peek(), "M1003", "Expected a member name after '.'.");
+		return false;
+	}
+	const Token token = advance();
+	r_name = token.literal.get_type() == Variant::STRING_NAME ? StringName(token.literal) : StringName(token.source);
+	return true;
+}
+
 TypeRef MochaParser::parse_type() {
 	if (++type_depth > MAX_TYPE_DEPTH) {
 		type_depth--;
@@ -288,6 +298,12 @@ StmtPtr MochaParser::parse_variable_statement() {
 }
 
 StmtPtr MochaParser::parse_if_statement() {
+	const int base_depth = statement_depth;
+	struct DepthRestore {
+		int &depth;
+		int original;
+		~DepthRestore() { depth = original; }
+	} depth_restore{ statement_depth, base_depth };
 	const Token start = previous();
 	auto result = statement(StatementKind::IF, span_from_token(start));
 	result->expression = parse_expression();
@@ -296,11 +312,12 @@ StmtPtr MochaParser::parse_if_statement() {
 	StmtPtr tail = result;
 	int branch_count = 0;
 	while (match(Token::ELIF)) {
-		if (++branch_count > MAX_STATEMENT_DEPTH) {
+		if (base_depth + ++branch_count > MAX_STATEMENT_DEPTH) {
 			error_at(previous(), "M1010", vformat("Conditional branch count exceeds the limit of %d.", MAX_STATEMENT_DEPTH));
 			synchronize_line();
 			break;
 		}
+		statement_depth = base_depth + branch_count;
 		auto branch = statement(StatementKind::IF, span_from_token(previous()));
 		branch->expression = parse_expression();
 		consume(Token::COLON, "Expected ':' after the elif condition.");
@@ -500,7 +517,7 @@ ExprPtr MochaParser::parse_postfix() {
 			result = call;
 		} else if (match(Token::PERIOD)) {
 			StringName name;
-			if (!consume_identifier(name, "after '.'")) return result;
+			if (!consume_member_name(name)) return result;
 			auto member = expression(ExprKind::MEMBER, merge_span(result->span, span_from_token(previous())));
 			if (result->tree_depth >= MAX_EXPRESSION_DEPTH) {
 				error_at(previous(), "M1009", vformat("Expression tree exceeds the limit of %d.", MAX_EXPRESSION_DEPTH));

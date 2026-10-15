@@ -119,6 +119,8 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			"\treturn result\n"
 			"func dynamic_suffix(value: Variant) -> Variant:\n"
 			"\treturn value + \"!\"\n"
+			"func public_match() -> bool:\n"
+			"\treturn \"abc\".match(\"a*\")\n"
 			"func forward_wrong(value: Variant) -> int:\n"
 			"\treturn add(value)\n"
 			"func power_associativity() -> int:\n"
@@ -211,6 +213,8 @@ godot::PackedStringArray MochaNativeTests::run() const {
 					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(3.5)) failures.push_back("analyzer: Variant arithmetic was incorrectly narrowed");
 					result = invoke("dynamic_suffix", { godot::String("Mocha") }, call_error, failure);
 					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant("Mocha!")) failures.push_back("analyzer: Variant plus String was rejected or narrowed");
+					result = invoke("public_match", {}, call_error, failure);
+					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(true)) failures.push_back("parser: contextual member name 'match' was rejected");
 					result = invoke("power_associativity", {}, call_error, failure);
 					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(int64_t(64))) failures.push_back("parser: exponentiation was not left-associative");
 					result = invoke("power_unary_precedence", {}, call_error, failure);
@@ -430,6 +434,26 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			bool found = false;
 			for (const Diagnostic &diagnostic : parser.get_diagnostics()) found |= diagnostic.code == "M1010";
 			if (!found) failures.push_back("parser: elif ladder did not produce M1010");
+		}
+	}
+
+	{
+		godot::String source = "func combined_depth() -> void:\n";
+		godot::String indent = "\t";
+		for (int i = 0; i < 200; ++i) {
+			source += indent + "if true:\n";
+			indent += "\t";
+		}
+		source += indent + "if false:\n" + indent + "\tpass\n";
+		for (int i = 0; i < 100; ++i) source += indent + "elif false:\n" + indent + "\tpass\n";
+		Program invalid;
+		MochaParser parser;
+		if (parser.parse(source, "res://native_combined_statement_depth.mocha", invalid) != godot::ERR_PARSE_ERROR) {
+			failures.push_back("parser: combined suite and elif depth was accepted");
+		} else {
+			bool found = false;
+			for (const Diagnostic &diagnostic : parser.get_diagnostics()) found |= diagnostic.code == "M1010";
+			if (!found) failures.push_back("parser: combined suite and elif depth did not produce M1010");
 		}
 	}
 

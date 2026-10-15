@@ -22,6 +22,13 @@ func _initialize() -> void:
 		if not script.can_instantiate():
 			failures.append("compiled MochaScript unexpectedly cannot instantiate")
 
+	var ignored := ResourceLoader.load("res://example.mocha", "", ResourceLoader.CACHE_MODE_IGNORE) as MochaScript
+	if ignored == null or not ignored.is_compilation_valid():
+		failures.append("CACHE_MODE_IGNORE did not produce a valid independent MochaScript")
+	var replaced := ResourceLoader.load("res://example.mocha", "", ResourceLoader.CACHE_MODE_REPLACE) as MochaScript
+	if replaced == null or not replaced.is_compilation_valid():
+		failures.append("CACHE_MODE_REPLACE did not produce a valid MochaScript")
+
 	if failures.is_empty():
 		print("MOCHA_RECOGNITION_OK")
 		quit(0)

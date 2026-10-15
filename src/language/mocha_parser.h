@@ -32,6 +32,7 @@ class MochaParser {
 	void skip_newlines();
 	bool consume_line_end();
 	bool consume_identifier(StringName &r_name, const String &p_context);
+	bool consume_member_name(StringName &r_name);
 
 	TypeRef parse_type();
 	bool parse_member(Program &r_program);

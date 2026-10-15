@@ -63,7 +63,7 @@ godot::Variant MochaScriptResourceLoader::_load(const godot::String &p_path, con
 	godot::Ref<MochaScript> script;
 	script.instantiate();
 	script->_set_source_code(source);
-	script->set_path(p_original_path.is_empty() ? p_path : p_original_path);
+	script->set_diagnostic_path_for_validation(p_original_path.is_empty() ? p_path : p_original_path);
 	// Invalid source remains inspectable as a Script resource. The error and its
 	// stable diagnostics are exposed by MochaScript rather than being replaced by
 	// a loader-level integer that loses source positions.

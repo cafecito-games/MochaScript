@@ -323,15 +323,6 @@ bool MochaScriptInstance::vtable_is_complete() {
 			vtable->get_fallback_func && vtable->get_language_func && vtable->free_func;
 }
 
-MochaScriptInstance *MochaScriptInstance::from_owner(const Object *p_owner) {
-	MochaScriptLanguage *language = MochaScriptLanguage::get_singleton();
-	if (p_owner == nullptr || language == nullptr) {
-		return nullptr;
-	}
-	return reinterpret_cast<MochaScriptInstance *>(
-			godot::gdextension_interface::object_get_script_instance(p_owner->_owner, language->_owner));
-}
-
 MochaScriptInstance::~MochaScriptInstance() {
 	if (script.is_valid()) script->notify_instance_freed(this);
 }
