@@ -212,6 +212,9 @@ TypeRef MochaAnalyzer::analyze_expression(ExprPtr &p_expression, Context &r_cont
 		case ExprKind::UNARY: {
 			const TypeRef operand = analyze_expression(p_expression->right, r_context);
 			if (p_expression->operation == MochaTokenizer::Token::NOT || p_expression->operation == MochaTokenizer::Token::BANG) {
+				if (operand.kind != TypeKind::BOOL && operand.kind != TypeKind::ANY) {
+					report(p_expression->span, "M2002", "Logical negation requires bool or Variant.");
+				}
 				result = TypeRef::make(TypeKind::BOOL, "bool");
 			} else if (p_expression->operation == MochaTokenizer::Token::TILDE) {
 				if (operand.kind != TypeKind::INT && operand.kind != TypeKind::ANY) {
@@ -321,7 +324,10 @@ void MochaAnalyzer::analyze_statement(StmtPtr &p_statement, Context &r_context) 
 				}
 				stored = analyze_binary_types(binary_operation, target, value, p_statement->span, &operation_valid);
 			}
-			if (!operation_valid || !assignable(target, stored)) {
+			if (!operation_valid) {
+				report(p_statement->span, "M2003", vformat("Operator '%s' does not accept %s and %s.",
+						MochaTokenizer::get_token_name(p_statement->operation), type_name(target), type_name(value)));
+			} else if (!assignable(target, stored)) {
 				report(p_statement->span, "M2013", vformat("Cannot assign %s to %s.", type_name(stored), type_name(target)));
 			}
 		} break;

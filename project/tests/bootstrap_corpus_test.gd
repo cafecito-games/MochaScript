@@ -15,8 +15,8 @@ func _initialize() -> void:
 	var negative := ResourceLoader.load(negative_path) as MochaScript
 	if negative == null or negative.reload() != ERR_COMPILATION_FAILED:
 		failures.append("pinned negative fixture did not fail analysis")
-	elif negative.get_diagnostics().is_empty() or negative.get_diagnostics()[0].get("code") != "M2013":
-		failures.append("pinned negative fixture did not produce M2013")
+	elif negative.get_diagnostics().is_empty() or negative.get_diagnostics()[0].get("code") != "M2003":
+		failures.append("pinned negative fixture did not produce M2003")
 
 	if failures.is_empty():
 		print("MOCHA_BOOTSTRAP_CORPUS_OK")

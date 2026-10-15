@@ -279,7 +279,9 @@ godot::PackedStringArray MochaNativeTests::run() const {
 		expect_analyzer_error("func bad() -> void:\n\tvar value = 1\n\tvalue = \"text\"\n", "M2013", "inferred local reassignment");
 		expect_analyzer_error("func bad() -> void:\n\tif 1:\n\t\tpass\n", "M2015", "non-bool condition");
 		expect_analyzer_error("func bad() -> bool:\n\treturn 1 and true\n", "M2003", "non-bool logical operands");
+		expect_analyzer_error("func bad() -> bool:\n\treturn not 1\n", "M2002", "non-bool logical negation");
 		expect_analyzer_error("func bad() -> Variant:\n\treturn \"%s\" % \"text\"\n", "M2003", "String percent formatting");
+		expect_analyzer_error("func bad() -> void:\n\tvar text: String = \"a\"\n\ttext %= \"b\"\n", "M2003", "String compound percent formatting");
 	}
 
 	{

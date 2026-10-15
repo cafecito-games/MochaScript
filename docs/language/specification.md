@@ -8,7 +8,8 @@ another Mocha-owned specification test says otherwise.
 - Source files use `.mocha`; indentation forms blocks and `#` starts a comment.
 - A file may begin with `extends Type`; the default base is `RefCounted`.
 - Top-level `var name[: Type] [= expression]` declares an instance member.
-- `func name(parameters) [-> Type]:` declares an instance method.
+- `func name(parameters) [-> Type]:` declares an instance method; `void` is supported only as a
+  return type.
 - Supported carriers are `Variant`, `bool`, `int`, `float`, `String`, `Array`, `Dictionary`, and
   Godot object class names. `Array[T]` and `Dictionary[K, V]` syntax is accepted, but its element
   types are deliberately erased and not yet enforced. Other carriers reject type arguments with
@@ -16,10 +17,11 @@ another Mocha-owned specification test says otherwise.
 
 ## Statements and expressions
 
-Local variables, assignment and arithmetic compound assignment, `if`/`else`, `while`, `return`,
+Local variables, assignment and arithmetic compound assignment, `if`/`elif`/`else`, `while`, `return`,
 `pass`, and expression statements execute. Expressions include literals, arrays, dictionaries,
 indexing, member reads, calls, unary operators, arithmetic, comparison, logical, containment, and
-bitwise operators.
+bitwise operators. `self` names the host object. `PI`, `TAU`, `INF`, and `NAN` are built-in numeric
+constants.
 
 Calls to another Mocha method execute in the Mocha VM. An unresolved unqualified call targets the
 host Godot object through public `Variant::callp`; an explicit receiver calls that public object's
@@ -35,9 +37,10 @@ Declared member, parameter, local, and return types are checked. `int` widens to
 argument types and wrong runtime stores fail explicitly.
 
 Untyped declarations infer and retain the initializer's static carrier type, so `var value = 1`
-cannot later store a `String` (`M2013`). Conditions and both forms of logical operators require
-`bool` operands (`M2015` and `M2003` respectively); there is no implicit truthiness. `%` is an
-integer modulo operator, not String formatting (`M2003`). These strict bootstrap rules are
+cannot later store a `String` (`M2013`). Statically known conditions, logical operators, and logical
+negation require `bool` operands (`M2015`, `M2003`, and `M2002` respectively). A `Variant` operand
+remains dynamic and currently uses Godot `Variant::booleanize()` at runtime. `%` and `%=` are integer
+modulo operators, not String formatting (`M2003`). These strict static bootstrap rules are
 intentional MochaScript divergences and may evolve only through the divergence workflow.
 
 Typed declarations without an initializer receive carrier defaults (`false`, `0`, `0.0`, empty

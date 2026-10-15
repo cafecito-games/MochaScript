@@ -21,10 +21,10 @@ divergence ledger in the same change.
 
 ## Intentional divergence
 
-Change the Mocha specification first, move any affected pinned parity fixture out of the baseline
-or classify it as an expected difference, then implement against the Mocha test. Do not change the
-implementation merely because a newer GDScript snapshot behaves differently. Use
-`./scripts/review_upstream.sh` to inspect upstream work without applying it.
+Change the Mocha specification first, remove or replace any affected path in the hard-coded
+`project/tests/bootstrap_corpus_test.gd` baseline, then add a Mocha-owned test for the new expected
+behavior. Do not change the implementation merely because a newer GDScript snapshot behaves
+differently. Use `./scripts/review_upstream.sh` to inspect upstream work without applying it.
 
 ## Highest-value seams
 
