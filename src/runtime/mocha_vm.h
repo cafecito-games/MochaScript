@@ -27,9 +27,6 @@ struct RuntimeFailure {
 };
 
 class MochaNestedFailureShield {
-	struct State;
-	State *state = nullptr;
-
 public:
 	MochaNestedFailureShield();
 	~MochaNestedFailureShield();

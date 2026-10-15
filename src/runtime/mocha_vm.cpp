@@ -22,8 +22,6 @@ namespace {
 thread_local int vm_entry_count = 0;
 thread_local int vm_frame_depth = 0;
 thread_local int64_t vm_operations_remaining = 0;
-struct NestedFailureCapture;
-thread_local std::vector<NestedFailureCapture *> vm_failure_captures;
 
 struct VMEntry {
 	bool root = false;
@@ -82,12 +80,17 @@ struct NestedFailureCapture {
 	uint64_t owner_id = 0;
 	StringName expected_method;
 	StringName alternate_method;
-	NestedFailureCapture(uint64_t p_owner_id, const StringName &p_expected_method,
-			const StringName &p_alternate_method = {}) : owner_id(p_owner_id),
-			expected_method(p_expected_method), alternate_method(p_alternate_method) {
-		vm_failure_captures.push_back(this);
+};
+
+thread_local std::vector<NestedFailureCapture> vm_failure_captures;
+
+struct NestedFailureCaptureScope {
+	NestedFailureCaptureScope(uint64_t p_owner_id, const StringName &p_expected_method,
+			const StringName &p_alternate_method = {}) {
+		vm_failure_captures.push_back({ {}, p_owner_id, p_expected_method, p_alternate_method });
 	}
-	~NestedFailureCapture() { vm_failure_captures.pop_back(); }
+	~NestedFailureCaptureScope() { vm_failure_captures.pop_back(); }
+	RuntimeFailure failure() const { return vm_failure_captures.back().failure; }
 };
 
 bool take_nested_failure(const RuntimeFailure &p_captured, const String &p_call_path,
@@ -174,13 +177,12 @@ bool evaluate_integer_binary(MochaTokenizer::Token::Type p_operation, int64_t p_
 
 } // namespace
 
-struct MochaNestedFailureShield::State {
-	NestedFailureCapture capture;
-	State() : capture(0, StringName()) {}
-};
-
-MochaNestedFailureShield::MochaNestedFailureShield() : state(new State) {}
-MochaNestedFailureShield::~MochaNestedFailureShield() { delete state; }
+MochaNestedFailureShield::MochaNestedFailureShield() {
+	vm_failure_captures.push_back({});
+}
+MochaNestedFailureShield::~MochaNestedFailureShield() {
+	vm_failure_captures.pop_back();
+}
 
 bool MochaVM::convert_value(const Variant &p_value, const TypeRef &p_type, Variant &r_converted) {
 	if (p_type.kind == TypeKind::ANY) {
@@ -434,7 +436,7 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				{
 					// Property access may execute arbitrary engine callbacks. This shield
 					// prevents their failures from leaking into an enclosing direct call.
-					NestedFailureCapture capture(0, StringName());
+					NestedFailureCaptureScope capture(0, StringName());
 					value = container.get(key, &valid);
 				}
 				if (!owner_is_alive()) { fail(r_failure, instruction.span, "The MochaScript owner was freed during an index operation."); return {}; }
@@ -448,7 +450,7 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				Variant value;
 				{
 					// This is a callback shield, not a direct Mocha call capture.
-					NestedFailureCapture capture(0, StringName());
+					NestedFailureCaptureScope capture(0, StringName());
 					value = receiver.get_named(instruction.name, valid);
 				}
 				if (!owner_is_alive()) { fail(r_failure, instruction.span, "The MochaScript owner was freed during a member read."); return {}; }
@@ -478,7 +480,7 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				Variant result;
 				bool valid = false;
 				{
-					NestedFailureCapture shield(0, StringName());
+					NestedFailureCaptureScope shield(0, StringName());
 					Variant::evaluate(operation, value, Variant(), result, valid);
 				}
 				if (!owner_is_alive()) { fail(r_failure, instruction.span, "The MochaScript owner was freed during a unary operation."); return {}; }
@@ -510,7 +512,7 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				Variant result;
 				bool valid = false;
 				{
-					NestedFailureCapture shield(0, StringName());
+					NestedFailureCaptureScope shield(0, StringName());
 					Variant::evaluate(operation, left, right, result, valid);
 				}
 				if (!owner_is_alive()) { fail(r_failure, instruction.span, "The MochaScript owner was freed during a binary operation."); return {}; }
@@ -551,14 +553,14 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 					} else if (const CompiledFunction *callee = p_module.find_function(instruction.name)) {
 						result = execute(p_module, *callee, p_owner, r_members, pointers.data(), int(pointers.size()), nested_error, r_failure, instruction.span, false);
 					} else {
-						NestedFailureCapture capture(receiver_id, instruction.name, alternate_method);
+						NestedFailureCaptureScope capture(receiver_id, instruction.name, alternate_method);
 						receiver.callp(instruction.name, pointers.data(), int(pointers.size()), result, nested_error);
-						nested_failure = capture.failure;
+						nested_failure = capture.failure();
 					}
 				} else {
-					NestedFailureCapture capture(receiver_id, instruction.name, alternate_method);
+					NestedFailureCaptureScope capture(receiver_id, instruction.name, alternate_method);
 					receiver.callp(instruction.name, pointers.data(), int(pointers.size()), result, nested_error);
-					nested_failure = capture.failure;
+					nested_failure = capture.failure();
 				}
 				if (take_nested_failure(nested_failure, p_module.path, instruction.span, r_failure)) {
 					r_call_error.error = GDEXTENSION_CALL_ERROR_INVALID_ARGUMENT;
@@ -650,14 +652,18 @@ String MochaVM::format_failure(const RuntimeFailure &p_failure, const String &p_
 bool MochaVM::publish_nested_failure(const RuntimeFailure &p_failure, uint64_t p_owner_id,
 		const StringName &p_method) {
 	if (p_failure.message.is_empty() || vm_failure_captures.empty()) return false;
-	NestedFailureCapture *capture = vm_failure_captures.back();
-	const bool initialization_from_set_script = p_method.is_empty() &&
-			capture->expected_method == StringName("set_script");
-	if (capture->owner_id != p_owner_id || !capture->failure.message.is_empty() ||
-			(!initialization_from_set_script && capture->expected_method != p_method &&
-					capture->alternate_method != p_method)) return false;
-	capture->failure = p_failure;
-	capture->failure.preserve_call_error = false;
+	NestedFailureCapture &capture = vm_failure_captures.back();
+	bool method_matches = false;
+	if (p_method.is_empty()) {
+		method_matches = capture.expected_method == StringName("set_script") ||
+				capture.alternate_method == StringName("set_script");
+	} else {
+		method_matches = capture.expected_method == p_method ||
+				(!capture.alternate_method.is_empty() && capture.alternate_method == p_method);
+	}
+	if (capture.owner_id != p_owner_id || !capture.failure.message.is_empty() || !method_matches) return false;
+	capture.failure = p_failure;
+	capture.failure.preserve_call_error = false;
 	return true;
 }
 

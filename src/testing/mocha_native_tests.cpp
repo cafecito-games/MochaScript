@@ -31,6 +31,7 @@ void MochaNativeTests::_bind_methods() {
 	godot::ClassDB::bind_method(godot::D_METHOD("mismatched_failure_probe"), &MochaNativeTests::mismatched_failure_probe);
 	godot::ClassDB::bind_method(godot::D_METHOD("multiple_failure_probe"), &MochaNativeTests::multiple_failure_probe);
 	godot::ClassDB::bind_method(godot::D_METHOD("shielded_failure_probe"), &MochaNativeTests::shielded_failure_probe);
+	godot::ClassDB::bind_method(godot::D_METHOD("initializer_mismatch_probe"), &MochaNativeTests::initializer_mismatch_probe);
 }
 
 bool MochaNativeTests::mismatched_failure_probe() const {
@@ -61,6 +62,13 @@ bool MochaNativeTests::shielded_failure_probe() const {
 	failure.code = "M4001";
 	failure.message = "shielded callback failure";
 	return MochaVM::publish_nested_failure(failure, get_instance_id(), "shielded_failure_probe");
+}
+
+bool MochaNativeTests::initializer_mismatch_probe() const {
+	RuntimeFailure failure;
+	failure.code = "M4001";
+	failure.message = "unrelated initializer failure";
+	return MochaVM::publish_nested_failure(failure, get_instance_id(), StringName());
 }
 
 godot::PackedStringArray MochaNativeTests::run() const {
@@ -309,7 +317,13 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			"func callback_shielded() -> bool:\n"
 			"\treturn shielded_failure_probe()\n"
 			"func indirect_failure_callv() -> Variant:\n"
-			"\treturn self.callv(\"dynamic_modulo\", [\"%d\"])\n";
+			"\treturn self.callv(\"dynamic_modulo\", [\"%d\"])\n"
+			"func indirect_set_script(script: Variant) -> Variant:\n"
+			"\treturn self.call(\"set_script\", script)\n"
+			"func indirect_set_script_callv(script: Variant) -> Variant:\n"
+			"\treturn self.callv(\"set_script\", [script])\n"
+			"func callback_initializer_mismatch() -> bool:\n"
+			"\treturn initializer_mismatch_probe()\n";
 	Program program;
 	MochaParser parser;
 	if (parser.parse(executable, "res://native_pipeline.mocha", program) != godot::OK) {
@@ -491,6 +505,32 @@ godot::PackedStringArray MochaNativeTests::run() const {
 									!called_at(failure, "res://native_pipeline.mocha", 116, 9)) {
 								failures.push_back("vm: callv nested failure was treated as a successful nil result");
 							}
+							godot::Ref<MochaScript> broken_initializer_script;
+							broken_initializer_script.instantiate();
+							broken_initializer_script->set_diagnostic_path_for_validation("res://native_broken_initializer.mocha");
+							broken_initializer_script->_set_source_code(
+									"extends RefCounted\nvar dynamic: Variant = null\nvar typed: String = dynamic\n");
+							if (broken_initializer_script->_reload(false) != godot::OK) {
+								failures.push_back("vm: broken-initializer runtime fixture did not compile");
+							} else {
+								const godot::Variant broken_script_value = broken_initializer_script;
+								const godot::Variant *broken_script_arguments[1] = { &broken_script_value };
+								MochaVM::call(*module, *module->find_function("indirect_set_script"), nested_owner.ptr(), nested_members,
+										broken_script_arguments, 1, call_error, failure);
+								if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
+										failure.path != "res://native_broken_initializer.mocha" || !failure_at(failure, 3, 1) ||
+										!called_at(failure, "res://native_pipeline.mocha", 118, 9)) {
+									failures.push_back("vm: call(set_script) did not propagate an initializer failure");
+								}
+								nested_owner->set_script(nested_script);
+								MochaVM::call(*module, *module->find_function("indirect_set_script_callv"), nested_owner.ptr(), nested_members,
+										broken_script_arguments, 1, call_error, failure);
+								if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
+										failure.path != "res://native_broken_initializer.mocha" || !failure_at(failure, 3, 1) ||
+										!called_at(failure, "res://native_pipeline.mocha", 120, 9)) {
+									failures.push_back("vm: callv(set_script) did not propagate an initializer failure");
+								}
+							}
 						}
 						nested_owner->set_script(godot::Variant());
 					}
@@ -516,6 +556,11 @@ godot::PackedStringArray MochaNativeTests::run() const {
 								callback_members, nullptr, 0, call_error, failure);
 						if (call_error.error != GDEXTENSION_CALL_OK || !failure.message.is_empty() || result != godot::Variant(false)) {
 							failures.push_back("vm: a shielded engine callback claimed an outer failure capture");
+						}
+						result = MochaVM::call(*module, *module->find_function("callback_initializer_mismatch"), callback_owner,
+								callback_members, nullptr, 0, call_error, failure);
+						if (call_error.error != GDEXTENSION_CALL_OK || !failure.message.is_empty() || result != godot::Variant(false)) {
+							failures.push_back("vm: an unrelated initializer failure claimed a non-set_script capture");
 						}
 					}
 					invoke("dynamic_store", {}, call_error, failure);

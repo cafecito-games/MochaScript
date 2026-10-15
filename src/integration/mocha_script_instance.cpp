@@ -401,9 +401,6 @@ Variant MochaScriptInstance::call(const StringName &p_method, const Variant **p_
 }
 
 void MochaScriptInstance::notification(int p_what, bool p_reversed) {
-	// Notifications are engine callbacks, not the direct result of an enclosing
-	// Variant::callp. Keep them from claiming that call's failure capture.
-	MochaNestedFailureShield failure_shield;
 	struct ActiveNotification {
 		MochaScriptInstance *instance;
 		explicit ActiveNotification(MochaScriptInstance *p_instance) : instance(p_instance) { instance->active_calls++; }
@@ -432,6 +429,10 @@ void MochaScriptInstance::notification(int p_what, bool p_reversed) {
 		UtilityFunctions::push_error(vformat("%s: _notification must declare one or two parameters.", script->get_path()));
 		return;
 	}
+	// Notifications are engine callbacks, not the direct result of an enclosing
+	// Variant::callp. Keep them from claiming that call's failure capture. The
+	// shield is stack-only and exists only when Mocha actually handles the callback.
+	MochaNestedFailureShield failure_shield;
 	call(notification_name, arguments, argument_count, error);
 	if (error.error != GDEXTENSION_CALL_OK) {
 		UtilityFunctions::push_error(vformat("%s: _notification call failed.", script->get_path()));
