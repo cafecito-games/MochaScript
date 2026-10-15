@@ -40,6 +40,24 @@ if cpp_status:
     raise SystemExit(f"godot-cpp has local source modifications:\n{cpp_status}")
 if (root / "godot-cpp" / "custom.py").exists():
     raise SystemExit("godot-cpp/custom.py would override the pinned build configuration")
+ignored_inputs = subprocess.run(
+    [
+        "git", "-C", str(root / "godot-cpp"), "ls-files", "--others", "--ignored",
+        "--exclude-standard", "--", "src", "include", "gdextension", "tools",
+        "binding_generator.py", "build_profile.py", "SConstruct",
+    ],
+    check=True,
+    text=True,
+    stdout=subprocess.PIPE,
+).stdout.splitlines()
+unexpected_inputs = [
+    path for path in ignored_inputs
+    if not path.endswith((".o", ".os", ".obj", ".pyc")) and "/__pycache__/" not in path
+]
+if unexpected_inputs:
+    raise SystemExit(
+        "godot-cpp has ignored files that can change the build:\n" + "\n".join(unexpected_inputs)
+    )
 
 api = root / "api" / "extension_api.json"
 actual_api = hashlib.sha256(api.read_bytes()).hexdigest()

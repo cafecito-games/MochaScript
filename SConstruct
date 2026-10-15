@@ -10,11 +10,11 @@ libname = "mocha_script"
 projectdir = "project"
 
 local_env = Environment(tools=["default"], PLATFORM="")
-local_env["custom_api_file"] = os.path.abspath("api/extension_api.json")
 
-customs = [os.path.abspath("custom.py")]
+customs = []
 opts = Variables(customs, ARGUMENTS)
 opts.Update(local_env)
+local_env["custom_api_file"] = os.path.abspath("api/extension_api.json")
 Help(opts.GenerateHelpText(local_env))
 
 env = local_env.Clone()
