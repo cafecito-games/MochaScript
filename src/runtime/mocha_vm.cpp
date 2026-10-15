@@ -10,6 +10,7 @@
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/core/object_id.hpp>
 #include <godot_cpp/variant/array.hpp>
+#include <godot_cpp/variant/callable.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
 
 #include <cstdint>
@@ -557,10 +558,16 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				GDExtensionCallError nested_error = {};
 				nested_error.error = GDEXTENSION_CALL_OK;
 				RuntimeFailure nested_failure;
-				const uint64_t receiver_id = receiver.get_type() == Variant::OBJECT ? uint64_t(ObjectID(receiver)) : 0;
+				uint64_t receiver_id = receiver.get_type() == Variant::OBJECT ? uint64_t(ObjectID(receiver)) : 0;
+				StringName expected_method = instruction.name;
 				StringName alternate_method;
 				const VMNames &names = vm_names();
-				if ((instruction.name == names.call || instruction.name == names.callv) &&
+				if (receiver.get_type() == Variant::CALLABLE &&
+						(instruction.name == names.call || instruction.name == names.callv)) {
+					const Callable callable = receiver;
+					receiver_id = uint64_t(callable.get_object_id());
+					expected_method = callable.get_method();
+				} else if ((instruction.name == names.call || instruction.name == names.callv) &&
 						!values.empty() && (values[0].get_type() == Variant::STRING ||
 								values[0].get_type() == Variant::STRING_NAME)) {
 					alternate_method = StringName(values[0]);
@@ -576,12 +583,12 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 					} else if (const CompiledFunction *callee = p_module.find_function(instruction.name)) {
 						result = execute(p_module, *callee, p_owner, r_members, pointers.data(), int(pointers.size()), nested_error, r_failure, instruction.span, false);
 					} else {
-						NestedFailureCaptureScope capture(receiver_id, instruction.name, alternate_method);
+						NestedFailureCaptureScope capture(receiver_id, expected_method, alternate_method);
 						receiver.callp(instruction.name, pointers.data(), int(pointers.size()), result, nested_error);
 						nested_failure = capture.failure();
 					}
 				} else {
-					NestedFailureCaptureScope capture(receiver_id, instruction.name, alternate_method);
+					NestedFailureCaptureScope capture(receiver_id, expected_method, alternate_method);
 					receiver.callp(instruction.name, pointers.data(), int(pointers.size()), result, nested_error);
 					nested_failure = capture.failure();
 				}
@@ -683,7 +690,10 @@ bool MochaVM::publish_nested_failure(const RuntimeFailure &p_failure, uint64_t p
 	if (p_method.is_empty()) {
 		method_matches = expected_method == vm_names().set_script || alternate_method == vm_names().set_script;
 	} else {
-		method_matches = expected_method == p_method ||
+		// Custom callables (including bound callables) can retain their target
+		// object while intentionally hiding the target method. In that case the
+		// synchronous owner match is the strongest dispatch identity available.
+		method_matches = expected_method.is_empty() || expected_method == p_method ||
 				(!alternate_method.is_empty() && alternate_method == p_method);
 	}
 	if (capture.owner_id != p_owner_id || !capture.failure->message.is_empty() || !method_matches) return false;
