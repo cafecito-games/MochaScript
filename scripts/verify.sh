@@ -25,7 +25,8 @@ run_godot() {
     local log=$2
     shift 2
     set +e
-    timeout 60s godot --headless --path "$repo_root/project" "$@" >"$log" 2>&1
+    XDG_DATA_HOME="$log_dir/data" XDG_CONFIG_HOME="$log_dir/config" XDG_CACHE_HOME="$log_dir/cache" \
+        timeout 60s godot --headless --path "$repo_root/project" "$@" >"$log" 2>&1
     local status=$?
     set -e
     if (( status != 0 )); then
@@ -110,5 +111,6 @@ fi
 
 rm -f -- "$editor_log" "$editor_test_log" "$recognition_log" "$tokenizer_log" "$frontend_log" \
     "$execution_log" "$native_log" "$bootstrap_corpus_log"
+rm -rf -- "$log_dir/data" "$log_dir/config" "$log_dir/cache"
 rmdir -- "$log_dir"
 echo "MOCHA_VERIFY_OK"

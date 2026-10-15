@@ -24,7 +24,9 @@ imports the fixture project, and runs these isolated sentinels exactly once:
 Any timeout, crash, unexpected engine error, missing or duplicate sentinel, unexpected diagnostic,
 or nonzero exit fails verification. The pinned engine's headless editor-script teardown emits five
 known renderer/text RID allocation errors; only those exact RID types are allowlisted for the editor
-placeholder test. Logs are written under the user's cache rather than the repository.
+placeholder test. Each verifier invocation gets isolated XDG data, config, and cache roots inside
+its log directory, so fixed `user://` fixtures cannot collide across worktrees. Logs are written
+under the user's cache rather than the repository.
 
 Linux CI reads the private release repository, immutable asset ID, and SHA-256 from
 `upstream.lock.json`, then verifies the archive before execution. Configure
