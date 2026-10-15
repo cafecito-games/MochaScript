@@ -27,9 +27,8 @@ class MochaScript;
  * slot the engine may call is a null-pointer call, so the vtable is asserted complete at startup
  * rather than discovered incomplete at a call site.
  *
- * Three things `ScriptInstance` has in the engine have no slot in the extension ABI. Reified type
- * arguments and the synthetic flag are stored here and read back through
- * `object_get_script_instance`; the RPC configuration is answered at script level, by
+ * The struct owns the host pointer, a strong script reference, per-instance members, and deferred
+ * self-free state. RPC configuration is answered at script level by
  * `MochaScript::_get_rpc_config`.
  */
 class MochaScriptInstance {

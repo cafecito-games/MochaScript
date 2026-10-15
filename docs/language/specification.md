@@ -8,8 +8,8 @@ another Mocha-owned specification test says otherwise.
 - Source files use `.mocha`; indentation forms blocks and `#` starts a comment.
 - A file may begin with `extends Type`; the default base is `RefCounted`.
 - Top-level `var name[: Type] [= expression]` declares an instance member.
-- `func name(parameters) [-> Type]:` declares an instance method; `void` is supported only as a
-  return type.
+- `func name(parameters) [-> Type]:` declares an instance method; an omitted return type is
+  `Variant`, while explicit `void` is supported only as a return type.
 - Supported carriers are `Variant`, `bool`, `int`, `float`, `String`, `Array`, `Dictionary`, and
   Godot object class names. `Array[T]` and `Dictionary[K, V]` syntax is accepted, but its element
   types are deliberately erased and not yet enforced. Other carriers reject type arguments with
@@ -22,13 +22,14 @@ Local variables, assignment and arithmetic compound assignment, `if`/`elif`/`els
 indexing, member reads, calls, unary operators, arithmetic, comparison, logical, containment, and
 bitwise operators. `self` names the host object. `PI`, `TAU`, `INF`, and `NAN` are built-in numeric
 constants.
+The constant names are reserved and cannot be redeclared (`M1013`).
 
 Calls to another Mocha method execute in the Mocha VM. An unresolved unqualified call targets the
 host Godot object through public `Variant::callp`; an explicit receiver calls that public object's
 method. This is Godot object interoperability, not GDScript delegation.
 
 `mocha_language_version()` is the intentional Mocha-only foundation canary described in the
-divergence ledger.
+divergence ledger. Its name is reserved; declaring a method with that name reports `M2029`.
 
 ## Static rules
 
@@ -64,7 +65,7 @@ Classes, inheritance between scripts, constants, enums, signals, annotations, ex
 static functions, lambdas, coroutines, `for`, `match`, `await`, `yield`, `break`, `continue`,
 `assert`, `breakpoint`, pattern matching, enforcement of typed collection elements,
 named/default/variadic arguments, setters, index/member assignment, super calls, global utility
-functions such as `print`, preload/load semantics, RPC annotations, and editor code completion are
+functions such as `print`, the `is` type-test operator (`M2091`), preload/load semantics, RPC annotations, and editor code completion are
 not implemented. Recognized unsupported statement forms report `M1090`; unsupported top-level
 declarations report `M1008`; assignment to a non-name target reports `M2090`; compiler gaps report
 an `M3xxx` diagnostic. No unsupported form may execute as a successful no-op.

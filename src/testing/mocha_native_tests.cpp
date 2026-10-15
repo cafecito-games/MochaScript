@@ -132,6 +132,8 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			"func power_modulo() -> int:\n"
 			"\tvar value: int = 2 ** 3\n"
 			"\treturn value % 3\n"
+			"func omitted_return_type():\n"
+			"\treturn 7\n"
 			"func recurse() -> int:\n"
 			"\treturn recurse()\n";
 	Program program;
@@ -219,6 +221,8 @@ godot::PackedStringArray MochaNativeTests::run() const {
 					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(int64_t(0))) failures.push_back("analyzer: integer negative power did not preserve its runtime carrier");
 					result = invoke("power_modulo", {}, call_error, failure);
 					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(int64_t(2))) failures.push_back("analyzer: integer power could not flow into int/modulo");
+					result = invoke("omitted_return_type", {}, call_error, failure);
+					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(int64_t(7))) failures.push_back("analyzer: omitted return type was not Variant");
 					invoke("add", { godot::String("wrong") }, call_error, failure);
 					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty()) failures.push_back("vm: wrong external argument was not reported as a handled runtime failure");
 					invoke("dynamic_store", {}, call_error, failure);
@@ -282,6 +286,17 @@ godot::PackedStringArray MochaNativeTests::run() const {
 		expect_analyzer_error("func bad() -> bool:\n\treturn not 1\n", "M2002", "non-bool logical negation");
 		expect_analyzer_error("func bad() -> Variant:\n\treturn \"%s\" % \"text\"\n", "M2003", "String percent formatting");
 		expect_analyzer_error("func bad() -> void:\n\tvar text: String = \"a\"\n\ttext %= \"b\"\n", "M2003", "String compound percent formatting");
+		expect_analyzer_error("func mocha_language_version() -> String:\n\treturn \"shadow\"\n", "M2029", "reserved intrinsic declaration");
+		expect_analyzer_error("func bad(value: Variant) -> bool:\n\treturn value is Node\n", "M2091", "unsupported is operator");
+	}
+
+	{
+		Program invalid;
+		MochaParser parser;
+		if (parser.parse("func bad(PI: float) -> float:\n\treturn PI\n", "res://native_reserved_constant.mocha", invalid) != godot::ERR_PARSE_ERROR ||
+				parser.get_diagnostics().empty() || parser.get_diagnostics()[0].code != "M1013") {
+			failures.push_back("parser: built-in constant declaration did not produce M1013");
+		}
 	}
 
 	{

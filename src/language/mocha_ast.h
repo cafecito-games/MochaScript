@@ -121,7 +121,7 @@ struct Parameter {
 struct FunctionDecl {
 	StringName name;
 	std::vector<Parameter> parameters;
-	TypeRef return_type = TypeRef::make(TypeKind::VOID, "void");
+	TypeRef return_type = TypeRef::any();
 	std::vector<StmtPtr> body;
 	SourceSpan span;
 };

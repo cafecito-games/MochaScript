@@ -227,6 +227,12 @@ TypeRef MochaAnalyzer::analyze_expression(ExprPtr &p_expression, Context &r_cont
 			}
 		} break;
 		case ExprKind::BINARY: {
+			if (p_expression->operation == MochaTokenizer::Token::IS) {
+				analyze_expression(p_expression->left, r_context);
+				report(p_expression->span, "M2091", "The 'is' operator is recognized but not supported by this MochaScript bootstrap.");
+				result = TypeRef::make(TypeKind::BOOL, "bool");
+				break;
+			}
 			const TypeRef left = analyze_expression(p_expression->left, r_context);
 			const TypeRef right = analyze_expression(p_expression->right, r_context);
 			result = analyze_binary_types(p_expression->operation, left, right, p_expression->span);
@@ -379,6 +385,9 @@ Error MochaAnalyzer::analyze(Program &p_program, const String &p_path) {
 		}
 	}
 	for (FunctionDecl &function : p_program.functions) {
+		if (function.name == StringName("mocha_language_version")) {
+			report(function.span, "M2029", "'mocha_language_version' is reserved for the MochaScript intrinsic.");
+		}
 		if (functions.has(function.name)) report(function.span, "M2021", vformat("Function '%s' is already declared.", String(function.name)));
 		else functions.insert(function.name, true);
 	}

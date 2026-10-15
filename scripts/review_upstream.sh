@@ -48,10 +48,12 @@ printf 'Attempted upstream-only and Mocha-owned reviews for Godot %s.\nMateriali
 echo "Review reports: $report_root"
 if (( tokenizer_status != 0 || fixtures_status != 0 )); then
     cat "$report_root/tokenizer-review.log" "$report_root/bootstrap-fixtures-review.log" >&2
-    if (( tokenizer_status == 2 || fixtures_status == 2 )); then
+    if (( (tokenizer_status == 0 || tokenizer_status == 2) &&
+            (fixtures_status == 0 || fixtures_status == 2) )); then
         echo "One or more Mocha transforms were incomplete; see the saved markers and component logs." >&2
+        exit 2
     else
         echo "One or more component reviews failed before complete reports; see the component logs." >&2
+        exit 1
     fi
-    exit 2
 fi

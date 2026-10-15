@@ -118,6 +118,11 @@ bool MochaParser::consume_line_end() {
 }
 
 bool MochaParser::consume_identifier(StringName &r_name, const String &p_context) {
+	if (peek().type == Token::CONST_PI || peek().type == Token::CONST_TAU ||
+			peek().type == Token::CONST_INF || peek().type == Token::CONST_NAN) {
+		error_at(peek(), "M1013", vformat("Built-in constant '%s' cannot be declared as a name.", token_text(peek())));
+		return false;
+	}
 	if (!peek().is_identifier()) {
 		error_at(peek(), "M1003", vformat("Expected an identifier %s.", p_context));
 		return false;

@@ -73,7 +73,10 @@ const TypeRef *MochaScript::get_member_type(int64_t p_index) const {
 	return compiled_module && p_index >= 0 && p_index < int64_t(compiled_module->members.size())
 			? &compiled_module->members[size_t(p_index)].type : nullptr;
 }
-void MochaScript::notify_instance_freed(MochaScriptInstance *p_instance) { instances.erase(p_instance); }
+void MochaScript::notify_instance_freed(MochaScriptInstance *p_instance) {
+	std::lock_guard<std::mutex> lock(instances_mutex);
+	instances.erase(p_instance);
+}
 bool MochaScript::_editor_can_reload_from_file() { return true; }
 void MochaScript::_placeholder_erased(void *) {}
 bool MochaScript::_can_instantiate() const { return valid && compiled_module != nullptr; }
@@ -84,6 +87,7 @@ godot::StringName MochaScript::_get_instance_base_type() const {
 	return compiled_module ? compiled_module->base_type : godot::StringName();
 }
 void *MochaScript::_instance_create(godot::Object *p_for_object) const {
+	std::unique_lock<std::mutex> lock(instances_mutex);
 	if (!_can_instantiate() || p_for_object == nullptr) return nullptr;
 	if (!compiled_module->base_type.is_empty() && !godot::ClassDB::is_parent_class(p_for_object->get_class(), compiled_module->base_type)) {
 		godot::UtilityFunctions::push_error(godot::vformat("Cannot attach %s to %s; MochaScript extends %s.", get_path(), p_for_object->get_class(), godot::String(compiled_module->base_type)));
@@ -95,18 +99,17 @@ void *MochaScript::_instance_create(godot::Object *p_for_object) const {
 	instance->owner = p_for_object;
 	instance->script = godot::Ref<MochaScript>(const_cast<MochaScript *>(this));
 	const_cast<MochaScript *>(this)->instances.insert(instance);
+	lock.unlock();
 	RuntimeFailure failure;
 	if (MochaVM::initialize(*module, p_for_object, instance->members, failure) != godot::OK) {
 		godot::UtilityFunctions::push_error(godot::vformat("%s:%d:%d: %s: %s", get_path(), failure.span.line, failure.span.column, failure.code, failure.message));
 		failure.reported = true;
 		MochaVM::publish_nested_failure(failure, instance_owner_id, godot::StringName());
-		const_cast<MochaScript *>(this)->instances.erase(instance);
 		memdelete(instance);
 		return nullptr;
 	}
 	void *handle = godot::gdextension_interface::script_instance_create3(MochaScriptInstance::get_vtable(), instance);
 	if (handle == nullptr) {
-		const_cast<MochaScript *>(this)->instances.erase(instance);
 		memdelete(instance);
 	}
 	return handle;
@@ -120,6 +123,7 @@ void *MochaScript::_placeholder_instance_create(godot::Object *p_for_object) con
 bool MochaScript::_has_source_code() const { return true; }
 godot::String MochaScript::_get_source_code() const { return source_code; }
 void MochaScript::_set_source_code(const godot::String &p_code) {
+	std::lock_guard<std::mutex> lock(instances_mutex);
 	if (p_code == source_code) return;
 	if (!instances.is_empty() && p_code != source_code) {
 		diagnostics.clear();
@@ -143,6 +147,7 @@ void MochaScript::_set_source_code(const godot::String &p_code) {
 }
 
 godot::Error MochaScript::_reload(bool) {
+	std::lock_guard<std::mutex> lock(instances_mutex);
 	if (!instances.is_empty()) {
 		return godot::ERR_ALREADY_IN_USE;
 	}

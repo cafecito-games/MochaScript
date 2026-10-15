@@ -29,6 +29,7 @@ only when an entry or a MochaScript specification test says it is.
 | diagnostics | intentional divergence | Stable `M0xxx`–`M4xxx` records include source locations. | negative fixtures |
 | global utility functions | unsupported | Unqualified unresolved calls target the host object; GDScript globals such as `print` are not resolved. | specification and host-call architecture |
 | language version intrinsic | intentional divergence | `mocha_language_version()` returns Mocha bootstrap metadata. | vertical slice canary |
+| intrinsic and constant names | intentional divergence | The intrinsic and `PI`/`TAU`/`INF`/`NAN` names are reserved and cannot be shadowed. | native parser/analyzer tests |
 | GDScript interoperability | unsupported | One Godot object has one script instance; Mocha does not inherit from or delegate to GDScript. | architecture boundary and instance test |
 
 ## Status vocabulary

@@ -14,6 +14,8 @@
 #include <godot_cpp/classes/script_language.hpp>
 #include <godot_cpp/templates/hash_set.hpp>
 
+#include <mutex>
+
 namespace mocha_script {
 
 class MochaScript final : public godot::ScriptExtension {
@@ -26,6 +28,7 @@ class MochaScript final : public godot::ScriptExtension {
 	godot::TypedArray<godot::Dictionary> diagnostics;
 	std::shared_ptr<Program> program;
 	std::shared_ptr<CompiledModule> compiled_module;
+	mutable std::mutex instances_mutex;
 	mutable godot::HashSet<class MochaScriptInstance *> instances;
 
 protected:
