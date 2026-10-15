@@ -114,6 +114,8 @@ run_godot "bootstrap corpus test" "$bootstrap_corpus_log" --script res://tests/b
 release_project="$log_dir/release-project"
 python3 - "$repo_root/project" "$release_project" <<'PY'
 from pathlib import Path
+import configparser
+import json
 import shutil
 import sys
 
@@ -121,12 +123,33 @@ source = Path(sys.argv[1])
 target = Path(sys.argv[2])
 shutil.copytree(source, target, ignore=shutil.ignore_patterns(".godot"))
 manifest = target / "bin" / "mocha_script.gdextension"
-text = manifest.read_text(encoding="utf-8")
-debug_library = 'linux.x86_64.single.debug = "./linux/libmocha_script.linux.template_debug.x86_64.so"'
-release_library = 'linux.x86_64.single.debug = "./linux/libmocha_script.linux.template_release.x86_64.so"'
-if text.count(debug_library) != 1:
-    raise SystemExit("release smoke test could not identify exactly one debug library mapping")
-manifest.write_text(text.replace(debug_library, release_library), encoding="utf-8")
+configuration = configparser.ConfigParser(interpolation=None)
+configuration.optionxform = str
+with manifest.open(encoding="utf-8") as stream:
+    configuration.read_file(stream)
+libraries = configuration["libraries"]
+debug_key = "linux.x86_64.single.debug"
+release_key = "linux.x86_64.single.release"
+
+def declared_library(key: str, expected_name: str) -> str:
+    if key not in libraries:
+        raise SystemExit(f"extension manifest is missing {key}")
+    raw_value = libraries[key]
+    try:
+        relative_path = json.loads(raw_value)
+    except (TypeError, json.JSONDecodeError) as error:
+        raise SystemExit(f"extension manifest has an invalid {key} value: {raw_value}") from error
+    resolved = (manifest.parent / relative_path).resolve()
+    expected = (manifest.parent / "linux" / expected_name).resolve()
+    if resolved != expected or not resolved.is_file():
+        raise SystemExit(f"extension manifest {key} does not resolve to {expected}")
+    return raw_value
+
+declared_library(debug_key, "libmocha_script.linux.template_debug.x86_64.so")
+release_library = declared_library(release_key, "libmocha_script.linux.template_release.x86_64.so")
+libraries[debug_key] = release_library
+with manifest.open("w", encoding="utf-8") as stream:
+    configuration.write(stream, space_around_delimiters=True)
 PY
 
 run_godot_in_project "release editor import" "$release_editor_log" "$release_project" release --editor --quit
