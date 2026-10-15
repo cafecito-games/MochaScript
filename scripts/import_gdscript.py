@@ -137,11 +137,6 @@ def initial_import(custom_godot: Path, component: str, lock: dict) -> None:
             "refusing to overwrite Mocha-owned files:\n  " + "\n  ".join(collisions)
         )
 
-    for relative, contents in generated.items():
-        destination = ROOT / relative
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(contents, encoding="utf-8")
-
     provenance = {
         "schema": 1,
         "policy": "create-only; future upstream changes are review inputs",
@@ -152,6 +147,16 @@ def initial_import(custom_godot: Path, component: str, lock: dict) -> None:
     }
     if PROVENANCE_PATH.exists():
         provenance = json.loads(PROVENANCE_PATH.read_text(encoding="utf-8"))
+        if provenance.get("godot_commit") != lock["godot"]["commit"]:
+            raise SystemExit("existing provenance belongs to a different Godot commit")
+        if provenance.get("transform_version") != lock["imports"]["transform_version"]:
+            raise SystemExit("existing provenance uses a different transform version")
+
+    for relative, contents in generated.items():
+        destination = ROOT / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(contents, encoding="utf-8")
+
     provenance["components"][component] = [
         {
             "source": source,

@@ -83,6 +83,28 @@ def git_revision(path: Path, revision: str) -> str:
     ).stdout.strip()
 
 
+def git_status(path: Path, include_submodules: bool = False) -> str:
+    command = ["git", "-C", str(path), "status", "--porcelain", "--untracked-files=no"]
+    if include_submodules:
+        command.append("--ignore-submodules=dirty")
+    return subprocess.run(
+        command,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    ).stdout.strip()
+
+
+def git_tracked_files(path: Path, root: str) -> list[Path]:
+    output = subprocess.run(
+        ["git", "-C", str(path), "ls-files", root],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    ).stdout
+    return [path / relative for relative in output.splitlines()]
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -115,6 +137,8 @@ def main() -> None:
 
     require_equal("custom-godot commit", git_head(outer), lock["custom_godot"]["commit"])
     require_equal("Godot commit", git_head(godot), lock["godot"]["commit"])
+    require_equal("custom-godot working tree", git_status(outer, include_submodules=True), "")
+    require_equal("Godot working tree", git_status(godot), "")
     require_equal(
         "custom-godot release tag",
         git_revision(outer, f"refs/tags/{lock['custom_godot']['release']}^{{commit}}"),
@@ -154,7 +178,7 @@ def main() -> None:
     }
     include_counts: Counter[str] = Counter()
     unique_headers: set[str] = set()
-    for path in sorted(module.rglob("*")):
+    for path in git_tracked_files(godot, lock["godot"]["gdscript_root"]):
         if path.suffix not in {".cpp", ".h"} or "tests" in path.parts:
             continue
         for header in INCLUDE_RE.findall(path.read_text(encoding="utf-8")):

@@ -36,17 +36,18 @@ jobs:
           import json
           with open("upstream.lock.json", encoding="utf-8") as stream:
               runtime = json.load(stream)["installed_runtime"]
+          print(runtime["repository"])
           print(runtime["linux_editor_release_asset_id"])
           print(runtime["linux_editor_sha256"])
           PY
           )
-          godot_asset_api="https://api.github.com/repos/cafecito-games/custom-godot/releases/assets/${godot_pin[0]}"
+          godot_asset_api="https://api.github.com/repos/${godot_pin[0]}/releases/assets/${godot_pin[1]}"
           mkdir -p .ci/bin
           curl --fail --location --silent --show-error \
             --header "Authorization: Bearer $CUSTOM_GODOT_READ_TOKEN" \
             --header "Accept: application/octet-stream" \
             "$godot_asset_api" --output .ci/godot.tar.gz
-          echo "${godot_pin[1]}  .ci/godot.tar.gz" | sha256sum --check --strict
+          echo "${godot_pin[2]}  .ci/godot.tar.gz" | sha256sum --check --strict
           tar -xzf .ci/godot.tar.gz -C .ci/bin
           mv .ci/bin/godot.linuxbsd.editor.x86_64 .ci/bin/godot
           chmod +x .ci/bin/godot

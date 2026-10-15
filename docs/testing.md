@@ -21,7 +21,7 @@ imports the fixture project, and runs these isolated sentinels exactly once:
 Any timeout, crash, engine error, missing or duplicate sentinel, unexpected diagnostic, or nonzero
 exit fails verification. Logs are written under the user's cache rather than the repository.
 
-Linux CI downloads release asset `542713790` from the private Cafecito custom-godot repository and
-verifies SHA-256 `a9d5fb1a2998874cfc0da9100e690d3b76e46390fcf4da31585a70000a1e8ad6` before execution. Configure
+Linux CI reads the private release repository, immutable asset ID, and SHA-256 from
+`upstream.lock.json`, then verifies the archive before execution. Configure
 `CUSTOM_GODOT_READ_TOKEN` as a read-only Actions secret. No credential or mutable latest-release URL
 is embedded in the repository.

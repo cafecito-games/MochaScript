@@ -26,6 +26,8 @@ godot_tag=${pins[4]}
 godot_commit=${pins[5]}
 
 mkdir -p "$cache_base"
+target_parent=$(dirname "$target")
+mkdir -p "$target_parent"
 df -h "$cache_base"
 
 if [[ ! -d "$target/.git" ]]; then
@@ -33,7 +35,7 @@ if [[ ! -d "$target/.git" ]]; then
         echo "Refusing to replace non-repository path: $target" >&2
         exit 1
     fi
-    custom_temp=$(mktemp -d "$cache_base/custom-godot.materialize.XXXXXX")
+    custom_temp=$(mktemp -d "$target_parent/.custom-godot.materialize.XXXXXX")
     trap 'rm -rf "$custom_temp"' EXIT
     git clone --filter=blob:none --no-checkout "$custom_remote" "$custom_temp"
     git -C "$custom_temp" fetch --depth=1 origin "refs/tags/$custom_release:refs/tags/$custom_release"
@@ -67,7 +69,7 @@ if [[ ! -e "$godot_root/.git" ]]; then
         echo "Refusing to replace nonempty Godot path: $godot_root" >&2
         exit 1
     fi
-    godot_temp=$(mktemp -d "$cache_base/godot.materialize.XXXXXX")
+    godot_temp=$(mktemp -d "$target/.godot.materialize.XXXXXX")
     trap 'rm -rf "$godot_temp"' EXIT
     git clone --filter=blob:none --no-checkout "$godot_remote" "$godot_temp"
     git -C "$godot_temp" sparse-checkout init --cone

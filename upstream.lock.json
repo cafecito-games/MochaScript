@@ -32,6 +32,7 @@
     }
   },
   "installed_runtime": {
+    "repository": "cafecito-games/custom-godot",
     "release": "v4.7.2-20260903.1",
     "version": "4.7.2.stable.cafecito_e76255129.ed1daf0bf",
     "extension_api_sha256": "b61fb6208257c8d694463404d93d0b4d39e4d11a772babf012150bd57411d41b",
