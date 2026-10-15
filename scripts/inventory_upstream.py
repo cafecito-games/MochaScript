@@ -74,6 +74,15 @@ def git_head(path: Path) -> str:
     ).stdout.strip()
 
 
+def git_revision(path: Path, revision: str) -> str:
+    return subprocess.run(
+        ["git", "-C", str(path), "rev-parse", revision],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    ).stdout.strip()
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -106,6 +115,21 @@ def main() -> None:
 
     require_equal("custom-godot commit", git_head(outer), lock["custom_godot"]["commit"])
     require_equal("Godot commit", git_head(godot), lock["godot"]["commit"])
+    require_equal(
+        "custom-godot release tag",
+        git_revision(outer, f"refs/tags/{lock['custom_godot']['release']}^{{commit}}"),
+        lock["custom_godot"]["commit"],
+    )
+    require_equal(
+        "custom-godot Godot gitlink",
+        git_revision(outer, f"{lock['custom_godot']['commit']}:godot"),
+        lock["godot"]["commit"],
+    )
+    require_equal(
+        "Godot release tag",
+        git_revision(godot, f"refs/tags/{lock['godot']['tag']}^{{commit}}"),
+        lock["godot"]["commit"],
+    )
     require_equal(
         "patcher config SHA-256",
         sha256(outer / "config/patchers.yaml"),

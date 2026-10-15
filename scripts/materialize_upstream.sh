@@ -33,11 +33,31 @@ if [[ ! -d "$target/.git" ]]; then
         echo "Refusing to replace non-repository path: $target" >&2
         exit 1
     fi
-    git clone --filter=blob:none --no-checkout "$custom_remote" "$target"
-    git -C "$target" fetch --depth=1 origin "refs/tags/$custom_release:refs/tags/$custom_release"
-    git -C "$target" checkout --detach "$custom_commit"
+    custom_temp=$(mktemp -d "$cache_base/custom-godot.materialize.XXXXXX")
+    trap 'rm -rf "$custom_temp"' EXIT
+    git clone --filter=blob:none --no-checkout "$custom_remote" "$custom_temp"
+    git -C "$custom_temp" fetch --depth=1 origin "refs/tags/$custom_release:refs/tags/$custom_release"
+    custom_tag_commit=$(git -C "$custom_temp" rev-parse "refs/tags/$custom_release^{commit}")
+    if [[ "$custom_tag_commit" != "$custom_commit" ]]; then
+        echo "Custom Godot tag $custom_release resolves to $custom_tag_commit, expected $custom_commit" >&2
+        exit 1
+    fi
+    git -C "$custom_temp" checkout --detach "$custom_commit"
+    mv "$custom_temp" "$target"
+    trap - EXIT
 elif [[ $(git -C "$target" rev-parse HEAD) != "$custom_commit" ]]; then
     echo "Existing custom-godot checkout is not at pinned commit $custom_commit: $target" >&2
+    exit 1
+fi
+
+custom_tag_commit=$(git -C "$target" rev-parse "refs/tags/$custom_release^{commit}")
+if [[ "$custom_tag_commit" != "$custom_commit" ]]; then
+    echo "Custom Godot tag $custom_release resolves to $custom_tag_commit, expected $custom_commit" >&2
+    exit 1
+fi
+custom_godot_gitlink=$(git -C "$target" rev-parse "$custom_commit:godot")
+if [[ "$custom_godot_gitlink" != "$godot_commit" ]]; then
+    echo "Custom Godot $custom_commit records Godot $custom_godot_gitlink, expected $godot_commit" >&2
     exit 1
 fi
 
@@ -47,14 +67,32 @@ if [[ ! -e "$godot_root/.git" ]]; then
         echo "Refusing to replace nonempty Godot path: $godot_root" >&2
         exit 1
     fi
-    git clone --filter=blob:none --no-checkout "$godot_remote" "$godot_root"
-    git -C "$godot_root" sparse-checkout init --cone
-    git -C "$godot_root" sparse-checkout set modules/gdscript core editor scene/resources servers/text
-    git -C "$godot_root" fetch --depth=1 origin "refs/tags/$godot_tag:refs/tags/$godot_tag"
-    git -C "$godot_root" checkout --detach "$godot_commit"
+    godot_temp=$(mktemp -d "$cache_base/godot.materialize.XXXXXX")
+    trap 'rm -rf "$godot_temp"' EXIT
+    git clone --filter=blob:none --no-checkout "$godot_remote" "$godot_temp"
+    git -C "$godot_temp" sparse-checkout init --cone
+    git -C "$godot_temp" sparse-checkout set modules/gdscript core editor scene/resources servers/text
+    git -C "$godot_temp" fetch --depth=1 origin "refs/tags/$godot_tag:refs/tags/$godot_tag"
+    godot_tag_commit=$(git -C "$godot_temp" rev-parse "refs/tags/$godot_tag^{commit}")
+    if [[ "$godot_tag_commit" != "$godot_commit" ]]; then
+        echo "Godot tag $godot_tag resolves to $godot_tag_commit, expected $godot_commit" >&2
+        exit 1
+    fi
+    git -C "$godot_temp" checkout --detach "$godot_commit"
+    if [[ -d "$godot_root" ]]; then
+        rmdir "$godot_root"
+    fi
+    mv "$godot_temp" "$godot_root"
+    trap - EXIT
     git -C "$target" submodule absorbgitdirs godot
 elif [[ $(git -C "$godot_root" rev-parse HEAD) != "$godot_commit" ]]; then
     echo "Existing Godot checkout is not at pinned commit $godot_commit: $godot_root" >&2
+    exit 1
+fi
+
+godot_tag_commit=$(git -C "$godot_root" rev-parse "refs/tags/$godot_tag^{commit}")
+if [[ "$godot_tag_commit" != "$godot_commit" ]]; then
+    echo "Godot tag $godot_tag resolves to $godot_tag_commit, expected $godot_commit" >&2
     exit 1
 fi
 
