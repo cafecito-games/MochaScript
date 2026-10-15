@@ -18,19 +18,28 @@ execution_log="$cache_root/execution.log"
 native_log="$cache_root/native.log"
 bootstrap_corpus_log="$cache_root/bootstrap-corpus.log"
 
-timeout 60s godot --headless --path "$repo_root/project" --editor --quit >"$editor_log" 2>&1
-timeout 60s godot --headless --path "$repo_root/project" \
-    --script res://tests/recognition_test.gd >"$recognition_log" 2>&1
-timeout 60s godot --headless --path "$repo_root/project" \
-    --script res://tests/tokenizer_test.gd >"$tokenizer_log" 2>&1
-timeout 60s godot --headless --path "$repo_root/project" \
-    --script res://tests/frontend_test.gd >"$frontend_log" 2>&1
-timeout 60s godot --headless --path "$repo_root/project" \
-    --script res://tests/vertical_slice_test.gd >"$execution_log" 2>&1
-timeout 60s godot --headless --path "$repo_root/project" \
-    --script res://tests/native_test.gd >"$native_log" 2>&1
-timeout 60s godot --headless --path "$repo_root/project" \
-    --script res://tests/bootstrap_corpus_test.gd >"$bootstrap_corpus_log" 2>&1
+run_godot() {
+    local label=$1
+    local log=$2
+    shift 2
+    set +e
+    timeout 60s godot --headless --path "$repo_root/project" "$@" >"$log" 2>&1
+    local status=$?
+    set -e
+    if (( status != 0 )); then
+        echo "Godot $label failed with status $status" >&2
+        sed -n '1,260p' "$log" >&2
+        exit 1
+    fi
+}
+
+run_godot "editor import" "$editor_log" --editor --quit
+run_godot "recognition test" "$recognition_log" --script res://tests/recognition_test.gd
+run_godot "tokenizer test" "$tokenizer_log" --script res://tests/tokenizer_test.gd
+run_godot "frontend test" "$frontend_log" --script res://tests/frontend_test.gd
+run_godot "execution test" "$execution_log" --script res://tests/vertical_slice_test.gd
+run_godot "native test" "$native_log" --script res://tests/native_test.gd
+run_godot "bootstrap corpus test" "$bootstrap_corpus_log" --script res://tests/bootstrap_corpus_test.gd
 
 sentinel_count=$(grep -c '^MOCHA_RECOGNITION_OK$' "$recognition_log" || true)
 if [[ "$sentinel_count" != "1" ]]; then
