@@ -53,12 +53,14 @@ godot::Dictionary method_value_info(const godot::StringName &p_name, const TypeR
 void MochaScript::_bind_methods() {
 	godot::ClassDB::bind_method(godot::D_METHOD("get_token_count"), &MochaScript::get_token_count);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_diagnostics"), &MochaScript::get_diagnostics);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_last_source_error"), &MochaScript::get_last_source_error);
 	godot::ClassDB::bind_method(godot::D_METHOD("is_compilation_valid"), &MochaScript::is_compilation_valid);
 	godot::ClassDB::bind_method(godot::D_METHOD("is_placeholder_instance", "object"), &MochaScript::is_placeholder_instance);
 }
 
 int64_t MochaScript::get_token_count() const { return token_count; }
 godot::TypedArray<godot::Dictionary> MochaScript::get_diagnostics() const { return diagnostics; }
+godot::Dictionary MochaScript::get_last_source_error() const { return last_source_error; }
 bool MochaScript::is_compilation_valid() const { return valid; }
 bool MochaScript::is_placeholder_instance(godot::Object *p_object) const {
 	if (p_object == nullptr) return false;
@@ -148,20 +150,25 @@ bool MochaScript::try_replace_source_code(const godot::String &p_code) {
 	bool reload_path_backed_resource = false;
 	{
 		std::lock_guard<std::mutex> lock(instances_mutex);
-		if (p_code == source_code) return true;
+		if (p_code == source_code) {
+			last_source_error.clear();
+			return true;
+		}
 		if (!instances.is_empty()) {
-			diagnostics.clear();
 			godot::Dictionary diagnostic;
 			diagnostic["code"] = "M0003";
 			diagnostic["message"] = "Source replacement is refused while a MochaScript instance is alive.";
-			diagnostic["path"] = get_path().is_empty() ? godot::String("<memory>") : get_path();
+			diagnostic["path"] = !get_path().is_empty()
+					? get_path()
+					: (diagnostic_path.is_empty() ? godot::String("<memory>") : diagnostic_path);
 			diagnostic["line"] = 1;
 			diagnostic["column"] = 1;
 			diagnostic["end_line"] = 1;
 			diagnostic["end_column"] = 1;
-			diagnostics.push_back(diagnostic);
+			last_source_error = diagnostic;
 			return false;
 		}
+		last_source_error.clear();
 		source_code = p_code;
 		valid = false;
 		token_count = 0;

@@ -37,8 +37,9 @@ then publishes one complete module. No executable module is published after an e
 `can_instantiate()` becomes true only when a complete `CompiledModule` exists. Reload is refused
 with `ERR_ALREADY_IN_USE` while an instance is alive; this prevents bytecode and member-layout
 replacement beneath active frames. Each VM call also retains its module for the complete frame.
-Source replacement is likewise refused with diagnostic `M0003` while an instance is alive, so the
-published source and executable module cannot disagree. With no live instance, changing source
+Source replacement is likewise refused with operation error `M0003` while an instance is alive, so
+the published source and executable module cannot disagree. `get_last_source_error()` exposes that
+refusal without replacing the valid module's compilation diagnostics. With no live instance, changing source
 immediately invalidates and discards the old AST and module. A path-backed resource recompiles
 transactionally at once (including `CACHE_MODE_REPLACE`); a new in-memory resource becomes
 executable after its explicit reload. Replacing cached source while a runtime instance is alive

@@ -23,7 +23,7 @@ func _initialize() -> void:
 		script.set_source_code("extends Node\n")
 		if script.get_source_code() != published_source:
 			failures.append("source changed underneath a live MochaScript instance")
-		elif script.get_diagnostics().is_empty() or script.get_diagnostics()[0].get("code") != "M0003":
+		elif script.get_last_source_error().get("code") != "M0003" or not script.get_diagnostics().is_empty():
 			failures.append("live source replacement did not produce M0003")
 		if script.reload() != ERR_ALREADY_IN_USE:
 			failures.append("reload was not refused while a live MochaScript instance existed")

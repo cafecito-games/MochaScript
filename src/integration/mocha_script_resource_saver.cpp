@@ -12,6 +12,7 @@
 #include <godot_cpp/classes/dir_access.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/os.hpp>
+#include <godot_cpp/templates/hash_set.hpp>
 
 #include <atomic>
 
@@ -30,12 +31,23 @@ godot::Error MochaScriptResourceSaver::_save(const godot::Ref<godot::Resource> &
 	if (script.is_null()) return godot::ERR_INVALID_PARAMETER;
 
 	godot::String target_path = p_path;
-	godot::Ref<godot::DirAccess> requested_directory = godot::DirAccess::open(p_path.get_base_dir());
-	if (requested_directory.is_null()) return godot::DirAccess::get_open_error();
-	if (requested_directory->is_link(p_path.get_file())) {
-		target_path = requested_directory->read_link(p_path.get_file());
-		if (target_path.is_relative_path()) target_path = p_path.get_base_dir().path_join(target_path);
+	godot::HashSet<godot::String> visited_links;
+	bool target_resolved = false;
+	for (int hop = 0; hop < 32; ++hop) {
+		target_path = target_path.simplify_path();
+		if (visited_links.has(target_path)) return godot::ERR_CYCLIC_LINK;
+		visited_links.insert(target_path);
+		godot::Ref<godot::DirAccess> link_directory = godot::DirAccess::open(target_path.get_base_dir());
+		if (link_directory.is_null()) return godot::DirAccess::get_open_error();
+		if (!link_directory->is_link(target_path.get_file())) {
+			target_resolved = true;
+			break;
+		}
+		godot::String link_target = link_directory->read_link(target_path.get_file());
+		if (link_target.is_relative_path()) link_target = target_path.get_base_dir().path_join(link_target);
+		target_path = link_target;
 	}
+	if (!target_resolved) return godot::ERR_CYCLIC_LINK;
 
 	const godot::String directory_path = target_path.get_base_dir();
 	godot::Ref<godot::DirAccess> directory = godot::DirAccess::open(directory_path);

@@ -27,6 +27,7 @@ class MochaScript final : public godot::ScriptExtension {
 	bool valid = false;
 	int64_t token_count = 0;
 	godot::TypedArray<godot::Dictionary> diagnostics;
+	godot::Dictionary last_source_error;
 	std::shared_ptr<Program> program;
 	std::shared_ptr<CompiledModule> compiled_module;
 	mutable std::mutex instances_mutex;
@@ -39,6 +40,7 @@ protected:
 public:
 	int64_t get_token_count() const;
 	godot::TypedArray<godot::Dictionary> get_diagnostics() const;
+	godot::Dictionary get_last_source_error() const;
 	bool is_compilation_valid() const;
 	bool is_placeholder_instance(godot::Object *p_object) const;
 	bool try_replace_source_code(const godot::String &p_code);

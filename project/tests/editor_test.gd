@@ -63,6 +63,7 @@ func _initialize() -> void:
 		failures.append("editor saver did not preserve leading-BOM source bytes")
 
 	var target_path := "user://mocha_editor_symlink_target.mocha"
+	var middle_path := "user://mocha_editor_symlink_middle.mocha"
 	var link_path := "user://mocha_editor_symlink.mocha"
 	var target_file := FileAccess.open(target_path, FileAccess.WRITE)
 	if target_file == null:
@@ -72,14 +73,15 @@ func _initialize() -> void:
 		target_file.close()
 		var user_dir := DirAccess.open("user://")
 		var target_absolute := ProjectSettings.globalize_path(target_path)
+		var middle_absolute := ProjectSettings.globalize_path(middle_path)
 		var link_absolute := ProjectSettings.globalize_path(link_path)
 		var permission_preserved := FileAccess.set_unix_permissions(target_path, 416) == OK
-		if user_dir != null and user_dir.create_link(target_absolute, link_absolute) == OK:
+		if user_dir != null and user_dir.create_link(target_absolute, middle_absolute) == OK and user_dir.create_link(middle_absolute, link_absolute) == OK:
 			unsaved.set_source_code("extends RefCounted\nfunc saved_value() -> int:\n\treturn 9\n")
 			if ResourceSaver.save(unsaved, link_path) != OK:
-				failures.append("editor could not save a MochaScript through a symlink")
-			elif not user_dir.is_link(link_absolute) or not FileAccess.get_file_as_string(target_path).contains("return 9"):
-				failures.append("saving through a symlink replaced the link instead of its target")
+				failures.append("editor could not save a MochaScript through a symlink chain")
+			elif not user_dir.is_link(link_absolute) or not user_dir.is_link(middle_absolute) or not FileAccess.get_file_as_string(target_path).contains("return 9"):
+				failures.append("saving through a symlink chain replaced a link instead of its target")
 			elif permission_preserved and FileAccess.get_unix_permissions(target_path) != 416:
 				failures.append("saving through a symlink changed the target permissions")
 

@@ -90,10 +90,11 @@ godot::PackedStringArray MochaNativeTests::run() const {
 					loader.instantiate();
 					const godot::Variant result = loader->_load(path, {}, false, godot::ResourceLoader::CACHE_MODE_REPLACE);
 					const godot::TypedArray<godot::Dictionary> diagnostics = script->get_diagnostics();
-					const godot::Dictionary first = diagnostics.is_empty() ? godot::Dictionary() : godot::Dictionary(diagnostics[0]);
+					const godot::Dictionary source_error = script->get_last_source_error();
 					if (result.get_type() != godot::Variant::INT || int64_t(result) != godot::ERR_ALREADY_IN_USE ||
 							!script->_get_source_code().contains("return 1") || !script->is_compilation_valid() ||
-							first.get("code", "") != "M0003") {
+							!diagnostics.is_empty() || source_error.get("code", "") != "M0003" ||
+							source_error.get("path", "") != path) {
 						failures.push_back("loader: live CACHE_MODE_REPLACE did not report ERR_ALREADY_IN_USE while preserving compiled source");
 					}
 				}
