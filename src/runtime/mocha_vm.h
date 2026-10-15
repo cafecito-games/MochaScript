@@ -41,7 +41,8 @@ public:
 	}
 	// A script instance reached through a host `callp` reports a nested VM failure
 	// here so the outer VM frame cannot mistake its nil result for success.
-	static void publish_nested_failure(const RuntimeFailure &p_failure);
+	static void publish_nested_failure(const RuntimeFailure &p_failure, uint64_t p_owner_id,
+			const StringName &p_method);
 };
 
 } // namespace mocha_script

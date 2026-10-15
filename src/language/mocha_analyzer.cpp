@@ -93,7 +93,18 @@ TypeRef MochaAnalyzer::analyze_binary_types(MochaTokenizer::Token::Type p_operat
 	switch (p_operation) {
 		case Token::EQUAL_EQUAL:
 		case Token::BANG_EQUAL:
+			if (dynamic || p_left.kind == p_right.kind || (numeric(p_left) && numeric(p_right)) ||
+					p_left.kind == TypeKind::NIL || p_right.kind == TypeKind::NIL ||
+					(p_left.kind == TypeKind::OBJECT && p_right.kind == TypeKind::OBJECT)) {
+				return TypeRef::make(TypeKind::BOOL, "bool");
+			}
+			return invalid();
 		case Token::TK_IN:
+			if (dynamic || p_right.kind == TypeKind::ARRAY || p_right.kind == TypeKind::DICTIONARY ||
+					p_right.kind == TypeKind::STRING || p_right.kind == TypeKind::OBJECT) {
+				return TypeRef::make(TypeKind::BOOL, "bool");
+			}
+			return invalid();
 		case Token::IS:
 			return TypeRef::make(TypeKind::BOOL, "bool");
 		case Token::LESS:
@@ -128,7 +139,9 @@ TypeRef MochaAnalyzer::analyze_binary_types(MochaTokenizer::Token::Type p_operat
 		case Token::STAR_STAR:
 			if (dynamic) return TypeRef::any();
 			if (!numeric(p_left) || !numeric(p_right)) return invalid();
-			return TypeRef::make(TypeKind::FLOAT, "float");
+			return p_left.kind == TypeKind::FLOAT || p_right.kind == TypeKind::FLOAT
+					? TypeRef::make(TypeKind::FLOAT, "float")
+					: TypeRef::make(TypeKind::INT, "int");
 		case Token::SLASH:
 			if (dynamic) return TypeRef::any();
 			if (!numeric(p_left) || !numeric(p_right)) return invalid();

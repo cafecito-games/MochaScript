@@ -19,7 +19,8 @@ namespace {
 thread_local int vm_entry_count = 0;
 thread_local int vm_frame_depth = 0;
 thread_local int64_t vm_operations_remaining = 0;
-thread_local std::vector<RuntimeFailure *> vm_failure_captures;
+struct NestedFailureCapture;
+thread_local std::vector<NestedFailureCapture *> vm_failure_captures;
 
 struct VMEntry {
 	bool root = false;
@@ -59,7 +60,11 @@ Variant runtime_default(const TypeRef &p_type) {
 
 struct NestedFailureCapture {
 	RuntimeFailure failure;
-	NestedFailureCapture() { vm_failure_captures.push_back(&failure); }
+	uint64_t owner_id = 0;
+	StringName method;
+	NestedFailureCapture(uint64_t p_owner_id, const StringName &p_method) : owner_id(p_owner_id), method(p_method) {
+		vm_failure_captures.push_back(this);
+	}
 	~NestedFailureCapture() { vm_failure_captures.pop_back(); }
 };
 
@@ -319,7 +324,7 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				RuntimeFailure nested_failure;
 				Variant value;
 				{
-					NestedFailureCapture capture;
+					NestedFailureCapture capture(0, StringName());
 					value = container.get(key, &valid);
 					nested_failure = capture.failure;
 				}
@@ -335,7 +340,7 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				RuntimeFailure nested_failure;
 				Variant value;
 				{
-					NestedFailureCapture capture;
+					NestedFailureCapture capture(0, StringName());
 					value = receiver.get_named(instruction.name, valid);
 					nested_failure = capture.failure;
 				}
@@ -390,6 +395,7 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				GDExtensionCallError nested_error = {};
 				nested_error.error = GDEXTENSION_CALL_OK;
 				RuntimeFailure nested_failure;
+				const uint64_t receiver_id = receiver.get_type() == Variant::OBJECT ? uint64_t(ObjectID(receiver)) : 0;
 				if (instruction.opcode == OpCode::CALL_SELF) {
 					if (instruction.name == StringName("mocha_language_version")) {
 						if (!pointers.empty()) {
@@ -401,12 +407,12 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 					} else if (const CompiledFunction *callee = p_module.find_function(instruction.name)) {
 						result = execute(p_module, *callee, p_owner, r_members, pointers.data(), int(pointers.size()), nested_error, r_failure);
 					} else {
-						NestedFailureCapture capture;
+						NestedFailureCapture capture(receiver_id, instruction.name);
 						receiver.callp(instruction.name, pointers.data(), int(pointers.size()), result, nested_error);
 						nested_failure = capture.failure;
 					}
 				} else {
-					NestedFailureCapture capture;
+					NestedFailureCapture capture(receiver_id, instruction.name);
 					receiver.callp(instruction.name, pointers.data(), int(pointers.size()), result, nested_error);
 					nested_failure = capture.failure;
 				}
@@ -485,9 +491,12 @@ Variant MochaVM::call(const CompiledModule &p_module, const CompiledFunction &p_
 	return result;
 }
 
-void MochaVM::publish_nested_failure(const RuntimeFailure &p_failure) {
+void MochaVM::publish_nested_failure(const RuntimeFailure &p_failure, uint64_t p_owner_id,
+		const StringName &p_method) {
 	if (p_failure.message.is_empty() || vm_failure_captures.empty()) return;
-	*vm_failure_captures.back() = p_failure;
+	NestedFailureCapture *capture = vm_failure_captures.back();
+	if (capture->owner_id != p_owner_id || capture->method != p_method) return;
+	capture->failure = p_failure;
 }
 
 } // namespace mocha_script

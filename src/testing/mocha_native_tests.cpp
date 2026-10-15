@@ -119,12 +119,19 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			"\treturn result\n"
 			"func dynamic_suffix(value: Variant) -> Variant:\n"
 			"\treturn value + \"!\"\n"
-			"func power_associativity() -> float:\n"
+			"func power_associativity() -> int:\n"
 			"\treturn 2 ** 2 ** 3\n"
-			"func power_unary_precedence() -> float:\n"
+			"func power_unary_precedence() -> int:\n"
 			"\treturn -2 ** 2\n"
-			"func power_explicit_unary() -> float:\n"
+			"func power_explicit_unary() -> int:\n"
 			"\treturn - 2 ** 2\n"
+			"func power_integer_division() -> int:\n"
+			"\treturn 2 ** 3 / 3\n"
+			"func power_negative_exponent() -> int:\n"
+			"\treturn 2 ** -1\n"
+			"func power_modulo() -> int:\n"
+			"\tvar value: int = 2 ** 3\n"
+			"\treturn value % 3\n"
 			"func recurse() -> int:\n"
 			"\treturn recurse()\n";
 	Program program;
@@ -201,11 +208,17 @@ godot::PackedStringArray MochaNativeTests::run() const {
 					result = invoke("dynamic_suffix", { godot::String("Mocha") }, call_error, failure);
 					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant("Mocha!")) failures.push_back("analyzer: Variant plus String was rejected or narrowed");
 					result = invoke("power_associativity", {}, call_error, failure);
-					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(64.0)) failures.push_back("parser: exponentiation was not left-associative");
+					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(int64_t(64))) failures.push_back("parser: exponentiation was not left-associative");
 					result = invoke("power_unary_precedence", {}, call_error, failure);
-					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(4.0)) failures.push_back("parser: signed numeric literal precedence diverged from the baseline");
+					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(int64_t(4))) failures.push_back("parser: signed numeric literal precedence diverged from the baseline");
 					result = invoke("power_explicit_unary", {}, call_error, failure);
-					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(-4.0)) failures.push_back("parser: explicit unary minus did not bind below exponentiation");
+					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(int64_t(-4))) failures.push_back("parser: explicit unary minus did not bind below exponentiation");
+					result = invoke("power_integer_division", {}, call_error, failure);
+					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(int64_t(2))) failures.push_back("analyzer: integer power did not preserve integer division");
+					result = invoke("power_negative_exponent", {}, call_error, failure);
+					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(int64_t(0))) failures.push_back("analyzer: integer negative power did not preserve its runtime carrier");
+					result = invoke("power_modulo", {}, call_error, failure);
+					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(int64_t(2))) failures.push_back("analyzer: integer power could not flow into int/modulo");
 					invoke("add", { godot::String("wrong") }, call_error, failure);
 					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty()) failures.push_back("vm: wrong external argument was not reported as a handled runtime failure");
 					invoke("dynamic_store", {}, call_error, failure);
@@ -261,6 +274,24 @@ godot::PackedStringArray MochaNativeTests::run() const {
 	}
 
 	{
+		godot::String source = "func deep_container() -> Variant:\n\treturn ";
+		for (int i = 0; i < 80; ++i) source += "[";
+		source += "1";
+		for (int i = 0; i < 200; ++i) source += "+1";
+		for (int i = 0; i < 80; ++i) source += "]";
+		source += "\n";
+		Program invalid;
+		MochaParser parser;
+		if (parser.parse(source, "res://native_deep_container.mocha", invalid) != godot::ERR_PARSE_ERROR) {
+			failures.push_back("parser: container-wrapped deep expression was accepted");
+		} else {
+			bool found = false;
+			for (const Diagnostic &diagnostic : parser.get_diagnostics()) found |= diagnostic.code == "M1009";
+			if (!found) failures.push_back("parser: deep container expression did not produce M1009");
+		}
+	}
+
+	{
 		godot::String source = "func too_nested() -> void:\n";
 		godot::String indent = "\t";
 		for (int i = 0; i < 140; ++i) {
@@ -298,6 +329,8 @@ godot::PackedStringArray MochaNativeTests::run() const {
 				"func bad_modulo() -> Variant:\n\treturn 1.0 % 1.0\n"
 				"func bad_shift() -> Variant:\n\treturn 1.0 << 1\n"
 				"func bad_order() -> bool:\n\treturn \"a\" < 1\n"
+				"func bad_equality() -> bool:\n\treturn 1 == \"1\"\n"
+				"func bad_membership() -> bool:\n\treturn 1 in 2\n"
 				"func bad_negation() -> Variant:\n\treturn ~1.0\n"
 				"func bad_compound() -> void:\n\tvar text: String = \"a\"\n\ttext -= \"b\"\n";
 		Program invalid;

@@ -90,6 +90,7 @@ void *MochaScript::_instance_create(godot::Object *p_for_object) const {
 		return nullptr;
 	}
 	const std::shared_ptr<CompiledModule> module = compiled_module;
+	const uint64_t instance_owner_id = p_for_object->get_instance_id();
 	auto *instance = memnew(MochaScriptInstance);
 	instance->owner = p_for_object;
 	instance->script = godot::Ref<MochaScript>(const_cast<MochaScript *>(this));
@@ -98,7 +99,7 @@ void *MochaScript::_instance_create(godot::Object *p_for_object) const {
 	if (MochaVM::initialize(*module, p_for_object, instance->members, failure) != godot::OK) {
 		godot::UtilityFunctions::push_error(godot::vformat("%s:%d:%d: %s: %s", get_path(), failure.span.line, failure.span.column, failure.code, failure.message));
 		failure.reported = true;
-		MochaVM::publish_nested_failure(failure);
+		MochaVM::publish_nested_failure(failure, instance_owner_id, godot::StringName());
 		const_cast<MochaScript *>(this)->instances.erase(instance);
 		memdelete(instance);
 		return nullptr;

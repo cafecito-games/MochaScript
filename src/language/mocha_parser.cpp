@@ -409,6 +409,10 @@ ExprPtr MochaParser::parse_unary() {
 		// `and`; symbolic `!` remains a conventional high-precedence unary.
 		ExprPtr operand = parse_expression(3);
 		if (!operand) return {};
+		if (operand->tree_depth >= MAX_EXPRESSION_DEPTH) {
+			error_at(operation, "M1009", vformat("Expression tree exceeds the limit of %d.", MAX_EXPRESSION_DEPTH));
+			return operand;
+		}
 		auto result = expression(ExprKind::UNARY, merge_span(span_from_token(operation), operand->span));
 		result->tree_depth = operand->tree_depth + 1;
 		result->operation = operation.type;
@@ -516,26 +520,44 @@ ExprPtr MochaParser::parse_primary() {
 	}
 	if (match(Token::BRACKET_OPEN)) {
 		auto result = expression(ExprKind::ARRAY, span_from_token(token));
+		int literal_depth = 1;
 		if (!check(Token::BRACKET_CLOSE)) {
 			do {
-				result->arguments.push_back(parse_expression());
+				ExprPtr item = parse_expression();
+				if (item) literal_depth = MAX(literal_depth, item->tree_depth + 1);
+				result->arguments.push_back(std::move(item));
 			} while (match(Token::COMMA));
 		}
 		const Token end = consume(Token::BRACKET_CLOSE, "Expected ']' after the array elements.");
+		if (literal_depth > MAX_EXPRESSION_DEPTH) {
+			error_at(end, "M1009", vformat("Expression tree exceeds the limit of %d.", MAX_EXPRESSION_DEPTH));
+			result->arguments.clear();
+			return result;
+		}
+		result->tree_depth = literal_depth;
 		result->span = merge_span(result->span, span_from_token(end));
 		return result;
 	}
 	if (match(Token::BRACE_OPEN)) {
 		auto result = expression(ExprKind::DICTIONARY, span_from_token(token));
+		int literal_depth = 1;
 		if (!check(Token::BRACE_CLOSE)) {
 			do {
 				ExprPtr key = parse_expression();
 				consume(Token::COLON, "Expected ':' between the dictionary key and value.");
 				ExprPtr value = parse_expression();
+				if (key) literal_depth = MAX(literal_depth, key->tree_depth + 1);
+				if (value) literal_depth = MAX(literal_depth, value->tree_depth + 1);
 				result->entries.push_back({ key, value });
 			} while (match(Token::COMMA));
 		}
 		const Token end = consume(Token::BRACE_CLOSE, "Expected '}' after the dictionary entries.");
+		if (literal_depth > MAX_EXPRESSION_DEPTH) {
+			error_at(end, "M1009", vformat("Expression tree exceeds the limit of %d.", MAX_EXPRESSION_DEPTH));
+			result->entries.clear();
+			return result;
+		}
+		result->tree_depth = literal_depth;
 		result->span = merge_span(result->span, span_from_token(end));
 		return result;
 	}

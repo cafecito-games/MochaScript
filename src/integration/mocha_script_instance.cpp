@@ -385,6 +385,7 @@ Variant MochaScriptInstance::call(const StringName &p_method, const Variant **p_
 			if (instance->active_calls == 0 && instance->free_requested) memdelete(instance);
 		}
 	} active(this);
+	const uint64_t call_owner_id = owner != nullptr ? owner->get_instance_id() : 0;
 	r_error.error = GDEXTENSION_CALL_OK;
 	if (script.is_null()) {
 		r_error.error = GDEXTENSION_CALL_ERROR_INSTANCE_IS_NULL;
@@ -409,7 +410,7 @@ Variant MochaScriptInstance::call(const StringName &p_method, const Variant **p_
 					failure.span.column, failure.code, failure.message));
 			failure.reported = true;
 		}
-		MochaVM::publish_nested_failure(failure);
+		MochaVM::publish_nested_failure(failure, call_owner_id, p_method);
 	}
 	return result;
 }

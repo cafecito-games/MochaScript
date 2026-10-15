@@ -40,7 +40,8 @@ remains a high-precedence unary operator.
 
 Exponentiation retains the pinned bootstrap baseline: `**` is left-associative. Signed numeric
 literals remain tokenizer atoms (`-2 ** 2` is `4`), while an explicit spaced unary operator binds
-below exponentiation (`- 2 ** 2` is `-4`).
+below exponentiation (`- 2 ** 2` is `-4`). Like the VM carrier operation, an integer base and
+integer exponent produce `int`; a float operand produces `float`.
 
 The bootstrap frontend rejects recursively nested expressions, constructed expression trees, and
 statement nesting deeper than 256 nodes with stable parser/analyzer diagnostics instead of risking
