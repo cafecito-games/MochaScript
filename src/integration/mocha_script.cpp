@@ -16,6 +16,7 @@
 
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/core/memory.hpp>
+#include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/godot.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
@@ -79,7 +80,10 @@ void MochaScript::notify_instance_freed(MochaScriptInstance *p_instance) {
 }
 bool MochaScript::_editor_can_reload_from_file() { return true; }
 void MochaScript::_placeholder_erased(void *) {}
-bool MochaScript::_can_instantiate() const { return valid && compiled_module != nullptr; }
+bool MochaScript::_can_instantiate() const {
+	return valid && compiled_module != nullptr &&
+			(_is_tool() || !godot::Engine::get_singleton()->is_editor_hint());
+}
 godot::Ref<godot::Script> MochaScript::_get_base_script() const { return {}; }
 godot::StringName MochaScript::_get_global_name() const { return {}; }
 bool MochaScript::_inherits_script(const godot::Ref<godot::Script> &) const { return false; }

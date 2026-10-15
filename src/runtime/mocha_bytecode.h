@@ -44,6 +44,7 @@ struct Instruction {
 
 struct CompiledFunction {
 	StringName name;
+	SourceSpan span;
 	std::vector<StringName> parameter_names;
 	std::vector<TypeRef> parameter_types;
 	std::vector<TypeRef> local_types;

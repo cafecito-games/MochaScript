@@ -12,6 +12,7 @@ log_dir=$(mktemp -d "$cache_root/verify.XXXXXX")
 "$repo_root/scripts/build.sh"
 
 editor_log="$log_dir/editor-import.log"
+editor_test_log="$log_dir/editor-test.log"
 recognition_log="$log_dir/recognition.log"
 tokenizer_log="$log_dir/tokenizer.log"
 frontend_log="$log_dir/frontend.log"
@@ -36,6 +37,7 @@ run_godot() {
 }
 
 run_godot "editor import" "$editor_log" --editor --quit
+run_godot "editor behavior test" "$editor_test_log" --editor --quit-after 2 --script res://tests/editor_test.gd
 run_godot "recognition test" "$recognition_log" --script res://tests/recognition_test.gd
 run_godot "tokenizer test" "$tokenizer_log" --script res://tests/tokenizer_test.gd
 run_godot "frontend test" "$frontend_log" --script res://tests/frontend_test.gd
@@ -47,6 +49,13 @@ sentinel_count=$(grep -c '^MOCHA_RECOGNITION_OK$' "$recognition_log" || true)
 if [[ "$sentinel_count" != "1" ]]; then
     echo "Expected exactly one MOCHA_RECOGNITION_OK sentinel; got $sentinel_count" >&2
     cat "$recognition_log" >&2
+    exit 1
+fi
+
+editor_sentinel_count=$(grep -c '^MOCHA_EDITOR_OK$' "$editor_test_log" || true)
+if [[ "$editor_sentinel_count" != "1" ]]; then
+    echo "Expected exactly one MOCHA_EDITOR_OK sentinel; got $editor_sentinel_count" >&2
+    cat "$editor_test_log" >&2
     exit 1
 fi
 
@@ -85,13 +94,21 @@ if [[ "$bootstrap_sentinel_count" != "1" ]]; then
     exit 1
 fi
 
+editor_test_errors=$(grep -Ei 'SCRIPT ERROR|ERROR:|crash|segmentation fault' "$editor_test_log" |
+    grep -Ev "^ERROR: [0-9]+ RID allocations of type '.*' were leaked at exit\.$" || true)
+if [[ -n "$editor_test_errors" ]]; then
+    echo "Godot emitted an unexpected error during editor-context verification" >&2
+    printf '%s\n' "$editor_test_errors" >&2
+    exit 1
+fi
+
 if grep -Eiq 'SCRIPT ERROR|ERROR:|crash|segmentation fault' "$editor_log" "$recognition_log" "$tokenizer_log" "$frontend_log" "$execution_log" "$native_log" "$bootstrap_corpus_log"; then
     echo "Godot emitted an unexpected error during verification" >&2
     grep -Ein 'SCRIPT ERROR|ERROR:|crash|segmentation fault' "$editor_log" "$recognition_log" "$tokenizer_log" "$frontend_log" "$execution_log" "$native_log" "$bootstrap_corpus_log" >&2
     exit 1
 fi
 
-rm -f -- "$editor_log" "$recognition_log" "$tokenizer_log" "$frontend_log" \
+rm -f -- "$editor_log" "$editor_test_log" "$recognition_log" "$tokenizer_log" "$frontend_log" \
     "$execution_log" "$native_log" "$bootstrap_corpus_log"
 rmdir -- "$log_dir"
 echo "MOCHA_VERIFY_OK"

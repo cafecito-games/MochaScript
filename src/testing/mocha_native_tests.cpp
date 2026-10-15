@@ -119,6 +119,8 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			"\treturn result\n"
 			"func dynamic_suffix(value: Variant) -> Variant:\n"
 			"\treturn value + \"!\"\n"
+			"func forward_wrong(value: Variant) -> int:\n"
+			"\treturn add(value)\n"
 			"func power_associativity() -> int:\n"
 			"\treturn 2 ** 2 ** 3\n"
 			"func power_unary_precedence() -> int:\n"
@@ -224,13 +226,15 @@ godot::PackedStringArray MochaNativeTests::run() const {
 					result = invoke("omitted_return_type", {}, call_error, failure);
 					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(int64_t(7))) failures.push_back("analyzer: omitted return type was not Variant");
 					invoke("add", { godot::String("wrong") }, call_error, failure);
-					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty()) failures.push_back("vm: wrong external argument was not reported as a handled runtime failure");
+					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty() || failure.span.line < 1 || failure.span.column < 1) failures.push_back("vm: wrong external argument lacked a source-located runtime failure");
+					invoke("forward_wrong", { godot::String("wrong") }, call_error, failure);
+					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty() || failure.span.line < 1 || failure.span.column < 1) failures.push_back("vm: nested wrong argument lacked its call-site span");
 					invoke("dynamic_store", {}, call_error, failure);
 					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty()) failures.push_back("vm: dynamic store failure exposed an unsafe Godot call error");
 					invoke("missing", { false }, call_error, failure);
 					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty()) failures.push_back("vm: typed fallthrough was not reported as a handled runtime failure");
 					invoke("recurse", {}, call_error, failure);
-					if (call_error.error != GDEXTENSION_CALL_OK || !failure.message.contains("depth")) failures.push_back("vm: recursion limit did not propagate as a handled runtime failure");
+					if (call_error.error != GDEXTENSION_CALL_OK || !failure.message.contains("depth") || failure.span.line < 1 || failure.span.column < 1) failures.push_back("vm: recursion limit lacked a source-located runtime failure");
 				}
 			}
 		}
@@ -288,6 +292,7 @@ godot::PackedStringArray MochaNativeTests::run() const {
 		expect_analyzer_error("func bad() -> void:\n\tvar text: String = \"a\"\n\ttext %= \"b\"\n", "M2003", "String compound percent formatting");
 		expect_analyzer_error("func mocha_language_version() -> String:\n\treturn \"shadow\"\n", "M2029", "reserved intrinsic declaration");
 		expect_analyzer_error("func bad(value: Variant) -> bool:\n\treturn value is Node\n", "M2091", "unsupported is operator");
+		expect_analyzer_error("extends Node\nfunc bad() -> Resource:\n\treturn self\n", "M2014", "incompatible object return");
 	}
 
 	{

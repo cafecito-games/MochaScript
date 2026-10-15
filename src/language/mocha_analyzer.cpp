@@ -73,6 +73,10 @@ bool MochaAnalyzer::assignable(const TypeRef &p_target, const TypeRef &p_value) 
 	if (p_target.kind == TypeKind::ANY || p_value.kind == TypeKind::ANY) return true;
 	if (p_value.kind == TypeKind::NIL) return p_target.kind == TypeKind::OBJECT || p_target.kind == TypeKind::NIL;
 	if (p_target.kind == TypeKind::FLOAT && p_value.kind == TypeKind::INT) return true;
+	if (p_target.kind == TypeKind::OBJECT && p_value.kind == TypeKind::OBJECT) {
+		if (p_target.name.is_empty() || p_value.name.is_empty()) return true;
+		return ClassDB::is_parent_class(p_value.name, p_target.name);
+	}
 	return p_target.kind == p_value.kind;
 }
 

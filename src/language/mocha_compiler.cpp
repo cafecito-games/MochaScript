@@ -247,6 +247,7 @@ void MochaCompiler::compile_function(const FunctionDecl &p_function, CompiledFun
 	function = &r_function;
 	locals.clear();
 	r_function.name = p_function.name;
+	r_function.span = p_function.span;
 	r_function.return_type = p_function.return_type;
 	for (const Parameter &parameter : p_function.parameters) {
 		const int64_t local = r_function.local_count++;
@@ -275,6 +276,7 @@ Error MochaCompiler::compile(const Program &p_program, const String &p_path, std
 
 	function = &module->initializer;
 	function->name = "@init";
+	function->span = p_program.members.empty() ? SourceSpan() : p_program.members.front().span;
 	function->return_type = TypeRef::make(TypeKind::VOID, "void");
 	locals.clear();
 	for (size_t index = 0; index < p_program.members.size(); ++index) {

@@ -169,7 +169,7 @@ bool MochaVM::variant_operator(MochaTokenizer::Token::Type p_operation, Variant:
 Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction &p_function,
 		Object *p_owner, Vector<Variant> &r_members, const Variant **p_arguments,
 		int p_argument_count, GDExtensionCallError &r_call_error,
-		RuntimeFailure &r_failure) {
+		RuntimeFailure &r_failure, const SourceSpan &p_entry_span) {
 	r_call_error = {};
 	r_call_error.error = GDEXTENSION_CALL_OK;
 	const uint64_t owner_id = p_owner != nullptr ? p_owner->get_instance_id() : 0;
@@ -179,7 +179,7 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 	VMFrame frame;
 	if (!frame.valid) {
 		r_call_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
-		fail(r_failure, {}, "MochaScript call depth exceeded 128 frames.");
+		fail(r_failure, p_entry_span, "MochaScript call depth exceeded 128 frames.");
 		return {};
 	}
 	if (p_argument_count != int(p_function.parameter_types.size())) {
@@ -192,7 +192,7 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 
 	if (p_function.local_types.size() != size_t(p_function.local_count)) {
 		r_call_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
-		fail(r_failure, {}, "MochaScript bytecode local-type table is inconsistent.");
+		fail(r_failure, p_entry_span, "MochaScript bytecode local-type table is inconsistent.");
 		return {};
 	}
 	std::vector<Variant> locals(size_t(p_function.local_count));
@@ -201,7 +201,7 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 		if (!convert_value(*p_arguments[index], p_function.parameter_types[size_t(index)], converted)) {
 			r_call_error.error = GDEXTENSION_CALL_ERROR_INVALID_ARGUMENT;
 			r_call_error.argument = index;
-			fail(r_failure, {}, vformat("Argument %d to '%s' has the wrong type.", index + 1, String(p_function.name)));
+			fail(r_failure, p_entry_span, vformat("Argument %d to '%s' has the wrong type.", index + 1, String(p_function.name)));
 			return {};
 		}
 		locals[size_t(index)] = converted;
@@ -410,7 +410,7 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 							result = "MochaScript/bootstrap-1";
 						}
 					} else if (const CompiledFunction *callee = p_module.find_function(instruction.name)) {
-						result = execute(p_module, *callee, p_owner, r_members, pointers.data(), int(pointers.size()), nested_error, r_failure);
+						result = execute(p_module, *callee, p_owner, r_members, pointers.data(), int(pointers.size()), nested_error, r_failure, instruction.span);
 					} else {
 						NestedFailureCapture capture(receiver_id, instruction.name);
 						receiver.callp(instruction.name, pointers.data(), int(pointers.size()), result, nested_error);
@@ -475,7 +475,7 @@ Error MochaVM::initialize(const CompiledModule &p_module, Object *p_owner,
 	GDExtensionCallError error;
 	error.error = GDEXTENSION_CALL_OK;
 	VMEntry entry;
-	execute(p_module, p_module.initializer, p_owner, r_members, nullptr, 0, error, r_failure);
+	execute(p_module, p_module.initializer, p_owner, r_members, nullptr, 0, error, r_failure, p_module.initializer.span);
 	return error.error == GDEXTENSION_CALL_OK && r_failure.message.is_empty() ? OK : ERR_SCRIPT_FAILED;
 }
 
@@ -485,7 +485,7 @@ Variant MochaVM::call(const CompiledModule &p_module, const CompiledFunction &p_
 		RuntimeFailure &r_failure) {
 	r_failure = {};
 	VMEntry entry;
-	Variant result = execute(p_module, p_function, p_owner, r_members, p_arguments, p_argument_count, r_call_error, r_failure);
+	Variant result = execute(p_module, p_function, p_owner, r_members, p_arguments, p_argument_count, r_call_error, r_failure, p_function.span);
 	if (!r_failure.message.is_empty()) {
 		// Internal script failures are already reported with their Mocha location.
 		// Returning an argument error here is unsafe when there is no corresponding

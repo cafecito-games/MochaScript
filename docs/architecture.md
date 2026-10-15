@@ -49,6 +49,10 @@ and uses `Variant::callp` only for ordinary public Godot object methods. The VM 
 recursion limits shared across nested and engine-reentrant calls, and reports source-located
 `M4xxx` failures.
 
+The bootstrap has no tool scripts. In editor context a valid script therefore reports that it cannot
+instantiate, and Godot uses the placeholder-instance path; member initializers and user callbacks do
+not execute in an open editor scene.
+
 ## Diagnostics
 
 Diagnostics are stable Mocha-owned records with `code`, `message`, `path`, `line`, `column`,

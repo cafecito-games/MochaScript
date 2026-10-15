@@ -10,6 +10,7 @@ It validates immutable pins, uses the cgroup CPU quota with a four-job ceiling, 
 imports the fixture project, and runs these isolated sentinels exactly once:
 
 - `MOCHA_RECOGNITION_OK`: language/resource identity and source preservation;
+- `MOCHA_EDITOR_OK`: non-tool scripts use placeholders and cannot instantiate in editor context;
 - `MOCHA_TOKENIZER_OK`: positive tokens and a stable lexical error;
 - `MOCHA_FRONTEND_OK`: parser and analyzer positive/negative cases;
 - `MOCHA_EXECUTION_OK`: compile, instantiate, host-object interaction, VM execution, and divergence
