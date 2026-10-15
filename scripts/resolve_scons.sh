@@ -18,8 +18,6 @@ managed_scons=${XDG_DATA_HOME:-${HOME}/.local/share}/mochascript/scons-${pin[0]}
 
 if [[ -x "$managed_scons" ]]; then
     printf '%s\n' "$managed_scons"
-elif command -v scons >/dev/null; then
-    command -v scons
 else
     echo "Pinned SCons is unavailable; run ./scripts/install_scons.sh" >&2
     exit 1

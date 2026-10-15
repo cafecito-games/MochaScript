@@ -121,6 +121,4 @@ for baseline_commit in "${baseline_commits[@]}"; do
 done
 
 python3 "$repo_root/scripts/inventory_upstream.py" --custom-godot "$target"
-python3 "$repo_root/scripts/import_gdscript.py" verify-source tokenizer --custom-godot "$target"
-python3 "$repo_root/scripts/import_gdscript.py" verify-source bootstrap-fixtures --custom-godot "$target"
 echo "$target"

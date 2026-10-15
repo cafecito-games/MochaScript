@@ -42,7 +42,7 @@ python3 "$repo_root/scripts/import_gdscript.py" review bootstrap-fixtures \
     --mocha-output "$report_root/bootstrap-fixtures-mocha.patch" \
     2>"$report_root/bootstrap-fixtures-review.log" || fixtures_status=$?
 
-printf 'Attempted upstream-only and Mocha-owned reviews for Godot %s.\nMaterialization status: %s\nTokenizer review status: %s\nBootstrap fixture review status: %s\nStatus legend: 0 complete; 2 transform-incomplete with saved marker; any other nonzero value failed before complete reports.\nComponent logs record warnings or pre-report failures.\nNo MochaScript-owned source was overwritten.\n' \
+printf 'Attempted upstream-only and Mocha-owned reviews for Godot %s.\nMaterialization status: %s\nTokenizer review status: %s\nBootstrap fixture review status: %s\nStatus legend: 0 complete; 2 candidate/transform-incomplete with saved markers; any other nonzero value failed before complete reports.\nComponent logs record warnings or pre-report failures.\nNo MochaScript-owned source was overwritten.\n' \
     "$godot_commit" "$materialize_status" "$tokenizer_status" "$fixtures_status" >"$report_root/README.txt"
 
 echo "Review reports: $report_root"
@@ -50,7 +50,7 @@ if (( tokenizer_status != 0 || fixtures_status != 0 )); then
     cat "$report_root/tokenizer-review.log" "$report_root/bootstrap-fixtures-review.log" >&2
     if (( (tokenizer_status == 0 || tokenizer_status == 2) &&
             (fixtures_status == 0 || fixtures_status == 2) )); then
-        echo "One or more Mocha transforms were incomplete; see the saved markers and component logs." >&2
+        echo "One or more component reviews were incomplete; see the saved markers and component logs." >&2
         exit 2
     else
         echo "One or more component reviews failed before complete reports; see the component logs." >&2

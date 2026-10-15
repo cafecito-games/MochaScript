@@ -20,14 +20,17 @@ Godot, godot-cpp-template, and BaristaScript attribution.
 ./scripts/materialize_upstream.sh
 ```
 
-This materializes immutable checkouts under a commit-keyed directory in the persistent user cache,
-verifies commits, patcher configuration, relevant patch hashes, and every imported file hash. Set
+This materializes immutable checkouts under a commit-keyed directory in the persistent user cache
+and verifies commits, patcher configuration, and relevant patch hashes. Git's immutable commit pins
+fix the materialized file contents; component source hashes are checked by initial import and the
+upstream-review command. Set
 `MOCHA_CUSTOM_GODOT_SOURCE` to use an existing checkout. Each pin gets a separate default checkout;
 the script refuses an explicitly selected checkout at another commit rather than rewriting it.
 Concurrent materialization of the same pin is serialized with a checkout-specific file lock.
 The architecture inventory is informational: files renamed or removed by a candidate revision are
-listed as absent instead of stopping materialization, so the component-specific upstream and
-candidate-to-Mocha reports can still be produced.
+listed as absent instead of stopping materialization. Component review likewise records a missing
+candidate file, an absent lock hash, or a candidate hash mismatch in its upstream and Mocha report,
+then returns status 2 after preserving all available evidence.
 
 The original component imports were:
 

@@ -74,9 +74,13 @@ def checked_sources(custom_godot: Path, component: str, lock: dict) -> dict[str,
     expected_hashes = lock["imports"]["files"]
     for relative in COMPONENTS[component]:
         source = godot_root / relative
+        if not source.is_file():
+            raise SystemExit(f"Pinned source file is absent: {relative}")
         data = source.read_bytes()
         actual_hash = sha256(data)
-        expected_hash = expected_hashes[relative]
+        expected_hash = expected_hashes.get(relative)
+        if expected_hash is None:
+            raise SystemExit(f"Pinned source hash is absent from the lock: {relative}")
         if actual_hash != expected_hash:
             raise SystemExit(
                 f"Pinned source hash mismatch for {relative}: "
@@ -84,6 +88,38 @@ def checked_sources(custom_godot: Path, component: str, lock: dict) -> dict[str,
             )
         result[relative] = data
     return result
+
+
+def review_candidate_sources(custom_godot: Path, component: str,
+        lock: dict) -> tuple[dict[str, bytes | None], dict[str, str]]:
+    godot_root = resolve_godot_root(custom_godot)
+    expected_commit = lock["godot"]["commit"]
+    actual_commit = git_head(godot_root)
+    if actual_commit != expected_commit:
+        raise SystemExit(
+            f"Godot source mismatch: expected {expected_commit}, got {actual_commit}"
+        )
+
+    result: dict[str, bytes | None] = {}
+    issues: dict[str, str] = {}
+    expected_hashes = lock["imports"]["files"]
+    for relative in COMPONENTS[component]:
+        source = godot_root / relative
+        if not source.is_file():
+            result[relative] = None
+            issues[relative] = "candidate file is absent"
+            continue
+        data = source.read_bytes()
+        result[relative] = data
+        actual_hash = sha256(data)
+        expected_hash = expected_hashes.get(relative)
+        if expected_hash is None:
+            issues[relative] = f"candidate hash is not pinned (actual {actual_hash})"
+        elif actual_hash != expected_hash:
+            issues[relative] = (
+                f"candidate hash mismatch: expected {expected_hash}, got {actual_hash}"
+            )
+    return result, issues
 
 
 def transform(relative: str, data: bytes, version: int) -> str:
@@ -269,12 +305,18 @@ def write_report(output: Path | None, report: str, label: str) -> None:
 def review(custom_godot: Path, component: str, lock: dict, output: Path | None,
         mocha_output: Path | None) -> int:
     baseline_sources = provenance_sources(custom_godot, component, lock)
-    candidate_sources = checked_sources(custom_godot, component, lock)
+    candidate_sources, candidate_issues = review_candidate_sources(
+        custom_godot, component, lock
+    )
     provenance = json.loads(PROVENANCE_PATH.read_text(encoding="utf-8"))
     baseline_commit, _transform_version, _entries = component_provenance(provenance, component)
     upstream_chunks: list[str] = []
     for source, candidate_data in candidate_sources.items():
         baseline_data = baseline_sources[source]
+        if source in candidate_issues:
+            upstream_chunks.append(f"# CANDIDATE INCOMPLETE for {source}: {candidate_issues[source]}\n")
+        if candidate_data is None:
+            candidate_data = b""
         upstream_chunks.extend(
             difflib.unified_diff(
                 baseline_data.decode("utf-8").splitlines(keepends=True),
@@ -286,15 +328,28 @@ def review(custom_godot: Path, component: str, lock: dict, output: Path | None,
     write_report(output, "".join(upstream_chunks), "upstream-only delta")
 
     mocha_chunks: list[str] = []
-    transform_failed = False
+    review_incomplete = bool(candidate_issues)
     for source, candidate_data in candidate_sources.items():
         relative = COMPONENTS[component][source]
+        if candidate_data is None:
+            mocha_chunks.append(f"# CANDIDATE FILE ABSENT for {source}\n")
+            destination = ROOT / relative
+            current = destination.read_text(encoding="utf-8") if destination.exists() else ""
+            mocha_chunks.extend(
+                difflib.unified_diff(
+                    [],
+                    current.splitlines(keepends=True),
+                    fromfile=f"candidate-upstream/{relative} (absent)",
+                    tofile=f"mocha-owned/{relative}",
+                )
+            )
+            continue
         try:
             candidate_text = transform(
                 source, candidate_data, lock["imports"]["transform_version"]
             )
         except SystemExit as error:
-            transform_failed = True
+            review_incomplete = True
             mocha_chunks.append(f"# TRANSFORM FAILED for {source}: {error}\n")
             print(
                 f"warning: upstream-only report is complete, but the Mocha divergence "
@@ -314,7 +369,9 @@ def review(custom_godot: Path, component: str, lock: dict, output: Path | None,
         )
     if mocha_output:
         write_report(mocha_output, "".join(mocha_chunks), "Mocha-owned divergence delta")
-    return 2 if transform_failed else 0
+    for source, issue in candidate_issues.items():
+        print(f"warning: candidate review is incomplete for {source}: {issue}", file=sys.stderr)
+    return 2 if review_incomplete else 0
 
 
 def main() -> int:
