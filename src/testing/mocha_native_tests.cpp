@@ -274,6 +274,23 @@ godot::PackedStringArray MochaNativeTests::run() const {
 	}
 
 	{
+		godot::String source = "var value: ";
+		for (int i = 0; i < 300; ++i) source += "Array[";
+		source += "int";
+		for (int i = 0; i < 300; ++i) source += "]";
+		source += "\n";
+		Program invalid;
+		MochaParser parser;
+		if (parser.parse(source, "res://native_deep_type.mocha", invalid) != godot::ERR_PARSE_ERROR) {
+			failures.push_back("parser: excessively nested type was accepted");
+		} else {
+			bool found = false;
+			for (const Diagnostic &diagnostic : parser.get_diagnostics()) found |= diagnostic.code == "M1011";
+			if (!found) failures.push_back("parser: nested type did not produce M1011");
+		}
+	}
+
+	{
 		godot::String source = "func deep_container() -> Variant:\n\treturn ";
 		for (int i = 0; i < 80; ++i) source += "[";
 		source += "1";
@@ -331,6 +348,7 @@ godot::PackedStringArray MochaNativeTests::run() const {
 				"func bad_order() -> bool:\n\treturn \"a\" < 1\n"
 				"func bad_equality() -> bool:\n\treturn 1 == \"1\"\n"
 				"func bad_membership() -> bool:\n\treturn 1 in 2\n"
+				"func bad_string_membership() -> bool:\n\treturn 1 in \"abc\"\n"
 				"func bad_negation() -> Variant:\n\treturn ~1.0\n"
 				"func bad_compound() -> void:\n\tvar text: String = \"a\"\n\ttext -= \"b\"\n";
 		Program invalid;

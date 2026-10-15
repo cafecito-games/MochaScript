@@ -321,14 +321,13 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				Variant container;
 				if (!pop(instruction, key) || !pop(instruction, container)) return {};
 				bool valid = false;
-				RuntimeFailure nested_failure;
 				Variant value;
 				{
+					// Property access may execute arbitrary engine callbacks. This shield
+					// prevents their failures from leaking into an enclosing direct call.
 					NestedFailureCapture capture(0, StringName());
 					value = container.get(key, &valid);
-					nested_failure = capture.failure;
 				}
-				if (take_nested_failure(nested_failure, r_failure)) return {};
 				if (!owner_is_alive()) { fail(r_failure, instruction.span, "The MochaScript owner was freed during an index operation."); return {}; }
 				if (!valid) { fail(r_failure, instruction.span, "Invalid index operation in MochaScript."); return {}; }
 				stack.push_back(value);
@@ -337,14 +336,12 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				Variant receiver;
 				if (!pop(instruction, receiver)) return {};
 				bool valid = false;
-				RuntimeFailure nested_failure;
 				Variant value;
 				{
+					// This is a callback shield, not a direct Mocha call capture.
 					NestedFailureCapture capture(0, StringName());
 					value = receiver.get_named(instruction.name, valid);
-					nested_failure = capture.failure;
 				}
-				if (take_nested_failure(nested_failure, r_failure)) return {};
 				if (!owner_is_alive()) { fail(r_failure, instruction.span, "The MochaScript owner was freed during a member read."); return {}; }
 				if (!valid) { fail(r_failure, instruction.span, vformat("Value has no member '%s'.", String(instruction.name))); return {}; }
 				stack.push_back(value);
@@ -363,7 +360,11 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				else if (!variant_operator(instruction.operation, operation)) { fail(r_failure, instruction.span, "Unsupported unary bytecode operator."); return {}; }
 				Variant result;
 				bool valid = false;
-				Variant::evaluate(operation, value, Variant(), result, valid);
+				{
+					NestedFailureCapture shield(0, StringName());
+					Variant::evaluate(operation, value, Variant(), result, valid);
+				}
+				if (!owner_is_alive()) { fail(r_failure, instruction.span, "The MochaScript owner was freed during a unary operation."); return {}; }
 				if (!valid) { fail(r_failure, instruction.span, "Invalid unary operation in MochaScript."); return {}; }
 				stack.push_back(result);
 			} break;
@@ -375,7 +376,11 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				if (!variant_operator(instruction.operation, operation)) { fail(r_failure, instruction.span, "Unsupported binary bytecode operator."); return {}; }
 				Variant result;
 				bool valid = false;
-				Variant::evaluate(operation, left, right, result, valid);
+				{
+					NestedFailureCapture shield(0, StringName());
+					Variant::evaluate(operation, left, right, result, valid);
+				}
+				if (!owner_is_alive()) { fail(r_failure, instruction.span, "The MochaScript owner was freed during a binary operation."); return {}; }
 				if (!valid) { fail(r_failure, instruction.span, "Invalid binary operation in MochaScript."); return {}; }
 				stack.push_back(result);
 			} break;
@@ -495,7 +500,7 @@ void MochaVM::publish_nested_failure(const RuntimeFailure &p_failure, uint64_t p
 		const StringName &p_method) {
 	if (p_failure.message.is_empty() || vm_failure_captures.empty()) return;
 	NestedFailureCapture *capture = vm_failure_captures.back();
-	if (capture->owner_id != p_owner_id || capture->method != p_method) return;
+	if (capture->owner_id != p_owner_id || (!p_method.is_empty() && capture->method != p_method)) return;
 	capture->failure = p_failure;
 }
 

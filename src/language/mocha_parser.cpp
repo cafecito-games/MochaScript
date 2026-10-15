@@ -16,6 +16,7 @@ namespace {
 using Token = MochaTokenizer::Token;
 constexpr int MAX_EXPRESSION_DEPTH = 256;
 constexpr int MAX_STATEMENT_DEPTH = 256;
+constexpr int MAX_TYPE_DEPTH = 256;
 
 struct ExpressionDepthScope {
 	int &depth;
@@ -25,6 +26,11 @@ struct ExpressionDepthScope {
 struct StatementDepthScope {
 	int &depth;
 	~StatementDepthScope() { depth--; }
+};
+
+struct TypeDepthScope {
+	int &depth;
+	~TypeDepthScope() { depth--; }
 };
 
 SourceSpan merge_span(const SourceSpan &p_first, const SourceSpan &p_last) {
@@ -122,6 +128,13 @@ bool MochaParser::consume_identifier(StringName &r_name, const String &p_context
 }
 
 TypeRef MochaParser::parse_type() {
+	if (++type_depth > MAX_TYPE_DEPTH) {
+		type_depth--;
+		error_at(peek(), "M1011", vformat("Type nesting exceeds the limit of %d.", MAX_TYPE_DEPTH));
+		synchronize_line();
+		return TypeRef::any();
+	}
+	TypeDepthScope depth_scope{ type_depth };
 	const Token token = peek();
 	String name;
 	if (match(Token::TK_VOID)) {
@@ -574,6 +587,7 @@ Error MochaParser::parse(const String &p_source, const String &p_path, Program &
 	current = 0;
 	expression_depth = 0;
 	statement_depth = 0;
+	type_depth = 0;
 	r_program = Program();
 
 	MochaTokenizerText tokenizer;

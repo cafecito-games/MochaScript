@@ -101,7 +101,8 @@ TypeRef MochaAnalyzer::analyze_binary_types(MochaTokenizer::Token::Type p_operat
 			return invalid();
 		case Token::TK_IN:
 			if (dynamic || p_right.kind == TypeKind::ARRAY || p_right.kind == TypeKind::DICTIONARY ||
-					p_right.kind == TypeKind::STRING || p_right.kind == TypeKind::OBJECT) {
+					((p_right.kind == TypeKind::STRING || p_right.kind == TypeKind::OBJECT) &&
+							p_left.kind == TypeKind::STRING)) {
 				return TypeRef::make(TypeKind::BOOL, "bool");
 			}
 			return invalid();
