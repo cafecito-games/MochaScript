@@ -7,7 +7,12 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cache_root=${XDG_CACHE_HOME:-${HOME}/.cache}/mochascript
 custom_commit=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["custom_godot"]["commit"])' "$repo_root/upstream.lock.json")
 godot_commit=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["godot"]["commit"])' "$repo_root/upstream.lock.json")
-report_root=${1:-$cache_root/upstream-review/$godot_commit}
+if (( $# > 0 )); then
+    report_root=$1
+else
+    mkdir -p "$cache_root/upstream-review"
+    report_root=$(mktemp -d "$cache_root/upstream-review/$godot_commit.XXXXXX")
+fi
 source_root=${MOCHA_CUSTOM_GODOT_SOURCE:-$cache_root/upstream/custom-godot-$custom_commit}
 
 "$repo_root/scripts/materialize_upstream.sh" >/dev/null

@@ -35,6 +35,28 @@ actual_scons = ".".join(actual_scons)
 if actual_scons != expected_scons:
     raise SystemExit(f"SCons mismatch: expected {expected_scons}, got {actual_scons or 'unknown'}")
 
+untracked_source = subprocess.run(
+    ["git", "ls-files", "--others", "--exclude-standard", "--", "src"],
+    check=True,
+    text=True,
+    stdout=subprocess.PIPE,
+).stdout.splitlines()
+ignored_source = subprocess.run(
+    ["git", "ls-files", "--others", "--ignored", "--exclude-standard", "--", "src"],
+    check=True,
+    text=True,
+    stdout=subprocess.PIPE,
+).stdout.splitlines()
+unexpected_source = sorted({
+    path for path in untracked_source + ignored_source
+    if Path(path).suffix in {".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx"}
+})
+if unexpected_source:
+    raise SystemExit(
+        "untracked or ignored MochaScript build inputs under src/:\n" +
+        "\n".join(unexpected_source)
+    )
+
 expected_cpp = lock["godot_cpp"]["commit"]
 actual_cpp = subprocess.run(
     ["git", "-C", str(root / "godot-cpp"), "rev-parse", "HEAD"],
