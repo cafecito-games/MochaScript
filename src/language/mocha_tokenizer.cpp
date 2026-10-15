@@ -461,14 +461,18 @@ MochaTokenizer::Token MochaTokenizerText::check_vcs_marker(char32_t p_test, Toke
 }
 
 MochaTokenizer::Token MochaTokenizerText::annotation() {
+	bool only_ascii = true;
 	if (is_unicode_identifier_start(_peek())) {
-		_advance(); // Consume start character.
+		only_ascii = _advance() < 128; // Consume start character.
 	} else {
 		push_error("Expected annotation identifier after \"@\".");
 	}
 	while (is_unicode_identifier_continue(_peek())) {
 		// Consume all identifier characters.
-		_advance();
+		only_ascii = _advance() < 128 && only_ascii;
+	}
+	if (!only_ascii) {
+		return make_error("Annotation identifiers are ASCII-only in the MochaScript bootstrap.");
 	}
 	Token annotation = make_token(Token::ANNOTATION);
 	annotation.literal = StringName(annotation.source);

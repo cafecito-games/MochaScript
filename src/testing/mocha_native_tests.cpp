@@ -21,6 +21,8 @@
 #include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
 
+#include <limits>
+
 namespace mocha_script {
 
 void MochaNativeTests::_bind_methods() {
@@ -61,6 +63,16 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			if (token.type == MochaTokenizer::Token::TK_EOF) break;
 		}
 		if (!rejected) failures.push_back("tokenizer: non-ASCII identifier was not deterministically rejected");
+	}
+
+	{
+		MochaTokenizerText tokenizer;
+		tokenizer.set_source_code("@café\n");
+		const MochaTokenizer::Token token = tokenizer.scan();
+		if (token.type != MochaTokenizer::Token::ERROR ||
+				!godot::String(token.literal).contains("ASCII-only")) {
+			failures.push_back("tokenizer: non-ASCII annotation identifier was not lexically rejected");
+		}
 	}
 
 	{
@@ -195,6 +207,24 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			"func dynamic_modulo_assign(value: Variant) -> Variant:\n"
 			"\tvalue %= 5\n"
 			"\treturn value\n"
+			"func dynamic_shift_left(value: Variant) -> Variant:\n"
+			"\treturn 1 << value\n"
+			"func dynamic_shift_right(value: Variant) -> Variant:\n"
+			"\treturn 8 >> value\n"
+			"func dynamic_bit_and(value: Variant) -> Variant:\n"
+			"\treturn 3 & value\n"
+			"func dynamic_bit_or(value: Variant) -> Variant:\n"
+			"\treturn 3 | value\n"
+			"func dynamic_bit_xor(value: Variant) -> Variant:\n"
+			"\treturn 3 ^ value\n"
+			"func dynamic_bit_not(value: Variant) -> Variant:\n"
+			"\treturn ~value\n"
+			"func negative_shift_left() -> int:\n"
+			"\treturn -1 << 1\n"
+			"func negative_shift_right() -> int:\n"
+			"\treturn -4 >> 1\n"
+			"func wrapping_shift_left() -> int:\n"
+			"\treturn 1 << 63\n"
 			"func public_match() -> bool:\n"
 			"\treturn \"abc\".match(\"a*\")\n"
 			"func forward_wrong(value: Variant) -> int:\n"
@@ -293,6 +323,36 @@ godot::PackedStringArray MochaNativeTests::run() const {
 					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty() || failure.span.line < 1) failures.push_back("vm: dynamic String modulo did not fail with a source-located runtime error");
 					invoke("dynamic_modulo_assign", { godot::String("%d") }, call_error, failure);
 					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty() || failure.span.line < 1) failures.push_back("vm: dynamic String modulo assignment did not fail with a source-located runtime error");
+					for (const godot::StringName &method : {
+							godot::StringName("dynamic_shift_left"), godot::StringName("dynamic_shift_right"),
+							godot::StringName("dynamic_bit_and"), godot::StringName("dynamic_bit_or"),
+							godot::StringName("dynamic_bit_xor"), godot::StringName("dynamic_bit_not") }) {
+						for (const godot::Variant &invalid_operand : { godot::Variant("not an int"), godot::Variant(1.5) }) {
+							invoke(method, { invalid_operand }, call_error, failure);
+							if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
+									failure.message.is_empty() || failure.span.line < 1 || failure.span.column < 1) {
+								failures.push_back("vm: dynamic integer operator lacked a source-located M4001 failure: " + godot::String(method));
+							}
+						}
+					}
+					for (const int64_t invalid_count : { int64_t(-1), int64_t(64) }) {
+						invoke("dynamic_shift_left", { invalid_count }, call_error, failure);
+						if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
+								!failure.message.contains("between 0 and 63") || failure.span.line < 1) {
+							failures.push_back("vm: invalid left-shift count lacked a deterministic source-located failure");
+						}
+						invoke("dynamic_shift_right", { invalid_count }, call_error, failure);
+						if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
+								!failure.message.contains("between 0 and 63") || failure.span.line < 1) {
+							failures.push_back("vm: invalid right-shift count lacked a deterministic source-located failure");
+						}
+					}
+					result = invoke("negative_shift_left", {}, call_error, failure);
+					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(int64_t(-2))) failures.push_back("vm: negative left shift was not defined as a two's-complement bit shift");
+					result = invoke("negative_shift_right", {}, call_error, failure);
+					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(int64_t(-2))) failures.push_back("vm: negative right shift was not defined as arithmetic shift");
+					result = invoke("wrapping_shift_left", {}, call_error, failure);
+					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(std::numeric_limits<int64_t>::min())) failures.push_back("vm: left shift did not use defined 64-bit wrapping semantics");
 					result = invoke("public_match", {}, call_error, failure);
 					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(true)) failures.push_back("parser: contextual member name 'match' was rejected");
 					result = invoke("power_associativity", {}, call_error, failure);
@@ -330,6 +390,20 @@ godot::PackedStringArray MochaNativeTests::run() const {
 		if (parser.parse("extends RefCounted\n\tvar value = 1\n", "res://native_overindent.mocha", invalid) != godot::ERR_PARSE_ERROR ||
 				parser.get_diagnostics().empty() || parser.get_diagnostics()[0].code != "M1008") {
 			failures.push_back("parser: stray top-level indentation did not terminate with M1008");
+		}
+	}
+
+	{
+		Program invalid;
+		MochaParser invalid_parser;
+		invalid_parser.parse("var value: int = read()\nfunc read() -> int:\n\treturn self.value\n", "res://native_indirect_self_initializer.mocha", invalid);
+		MochaAnalyzer analyzer;
+		if (analyzer.analyze(invalid, "res://native_indirect_self_initializer.mocha") != godot::ERR_COMPILATION_FAILED) {
+			failures.push_back("analyzer: implicit-self call in a member initializer was accepted");
+		} else {
+			bool found = false;
+			for (const Diagnostic &diagnostic : analyzer.get_diagnostics()) found |= diagnostic.code == "M2030";
+			if (!found) failures.push_back("analyzer: implicit-self initializer call did not produce M2030");
 		}
 	}
 

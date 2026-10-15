@@ -259,6 +259,10 @@ TypeRef MochaAnalyzer::analyze_expression(ExprPtr &p_expression, Context &r_cont
 		case ExprKind::CALL: {
 			for (ExprPtr &argument : p_expression->arguments) analyze_expression(argument, r_context);
 			if (p_expression->left && p_expression->left->kind == ExprKind::IDENTIFIER) {
+				if (r_context.in_member_initializer &&
+						p_expression->left->name != StringName("mocha_language_version")) {
+					report(p_expression->span, "M2030", "Calls through implicit 'self' are unavailable while member initializers are running.");
+				}
 				if (p_expression->left->name == StringName("mocha_language_version")) {
 					if (!p_expression->arguments.empty()) {
 						report(p_expression->span, "M2007", "mocha_language_version() takes no arguments.");

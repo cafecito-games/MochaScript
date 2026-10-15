@@ -25,13 +25,14 @@ only when an entry or a MochaScript specification test says it is.
 | inferred declarations | intentional divergence | An untyped non-null initializer fixes the declaration's carrier type; later incompatible stores are `M2013`. | native analyzer test |
 | static truthiness | intentional divergence | Statically known conditions, logical operands, and negations require `bool`. Dynamic `Variant` operands retain runtime truthiness in the bootstrap. | native analyzer tests |
 | percent operator | intentional divergence | `%` is integer modulo only; String formatting is rejected statically with `M2003` or dynamically with `M4001`. | native analyzer and VM tests |
+| shift semantics | intentional divergence | Shifts operate on signed 64-bit two's-complement bit patterns; left shift wraps, right shift is arithmetic, and counts outside `[0, 63]` report `M4001`. | native VM tests |
 | remaining static analysis | inherited subset | Declared types and the operations in the bootstrap specification are checked. | native and negative fixtures |
 | compiler and runtime | intentional ownership | Mocha bytecode and VM execute scripts; GDScript is never called. | vertical slice |
 | diagnostics | intentional divergence | Stable `M0xxx`–`M4xxx` records include source locations. | negative fixtures |
 | global utility functions | unsupported | Unqualified unresolved calls target the host object; GDScript globals such as `print` are not resolved. | specification and host-call architecture |
 | language version intrinsic | intentional divergence | `mocha_language_version()` returns Mocha bootstrap metadata. | vertical slice canary |
 | intrinsic and constant names | intentional divergence | The intrinsic and `PI`/`TAU`/`INF`/`NAN` names are reserved and cannot be shadowed. | native parser/analyzer tests |
-| initializer `self` access | unsupported | Member initializers use unqualified earlier-member reads; `self` is unavailable before instance attachment and reports `M2030`. | native analyzer test |
+| member initialization | intentional divergence | All carrier defaults are installed first and initializers run in declaration order, so current/later member reads observe defaults. `self` access and implicit-self calls are unavailable before instance attachment and report `M2030`. | native VM and analyzer tests |
 | GDScript interoperability | unsupported | One Godot object has one script instance; Mocha does not inherit from or delegate to GDScript. | architecture boundary and instance test |
 
 ## Status vocabulary

@@ -12,6 +12,9 @@
 #include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
 
+#include <cstdint>
+#include <limits>
+
 namespace mocha_script {
 
 namespace {
@@ -83,6 +86,57 @@ bool requires_integer_operands(MochaTokenizer::Token::Type p_operation) {
 		case Token::AMPERSAND:
 		case Token::PIPE:
 		case Token::CARET:
+			return true;
+		default:
+			return false;
+	}
+}
+
+int64_t integer_from_bits(uint64_t p_bits) {
+	if (p_bits <= uint64_t(std::numeric_limits<int64_t>::max())) return int64_t(p_bits);
+	return -1 - int64_t(~p_bits);
+}
+
+bool evaluate_integer_binary(MochaTokenizer::Token::Type p_operation, int64_t p_left,
+		int64_t p_right, int64_t &r_result, String &r_error) {
+	using Token = MochaTokenizer::Token;
+	switch (p_operation) {
+		case Token::PERCENT:
+			if (p_right == 0) {
+				r_error = "Modulo by zero is not allowed.";
+				return false;
+			}
+			// Avoid the one signed remainder operation that is undefined in C++.
+			r_result = p_left == std::numeric_limits<int64_t>::min() && p_right == -1
+					? 0
+					: p_left % p_right;
+			return true;
+		case Token::LESS_LESS:
+		case Token::GREATER_GREATER: {
+			if (p_right < 0 || p_right >= 64) {
+				r_error = "Shift count must be between 0 and 63.";
+				return false;
+			}
+			const uint64_t bits = uint64_t(p_left);
+			const uint32_t count = uint32_t(p_right);
+			uint64_t shifted = 0;
+			if (p_operation == Token::LESS_LESS) {
+				shifted = bits << count;
+			} else {
+				shifted = bits >> count;
+				if (p_left < 0 && count > 0) shifted |= std::numeric_limits<uint64_t>::max() << (64 - count);
+			}
+			r_result = integer_from_bits(shifted);
+			return true;
+		}
+		case Token::AMPERSAND:
+			r_result = integer_from_bits(uint64_t(p_left) & uint64_t(p_right));
+			return true;
+		case Token::PIPE:
+			r_result = integer_from_bits(uint64_t(p_left) | uint64_t(p_right));
+			return true;
+		case Token::CARET:
+			r_result = integer_from_bits(uint64_t(p_left) ^ uint64_t(p_right));
 			return true;
 		default:
 			return false;
@@ -369,9 +423,13 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 			case OpCode::UNARY: {
 				Variant value;
 				if (!pop(instruction, value)) return {};
-				if (instruction.operation == MochaTokenizer::Token::TILDE && value.get_type() != Variant::INT) {
-					fail(r_failure, instruction.span, "Bitwise negation requires an int operand at runtime.");
-					return {};
+				if (instruction.operation == MochaTokenizer::Token::TILDE) {
+					if (value.get_type() != Variant::INT) {
+						fail(r_failure, instruction.span, "Bitwise negation requires an int operand at runtime.");
+						return {};
+					}
+					stack.push_back(integer_from_bits(~uint64_t(int64_t(value))));
+					break;
 				}
 				Variant::Operator operation;
 				if (instruction.operation == MochaTokenizer::Token::MINUS) operation = Variant::OP_NEGATE;
@@ -396,6 +454,16 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 					fail(r_failure, instruction.span, vformat("Operator '%s' requires int operands at runtime.",
 							MochaTokenizer::get_token_name(instruction.operation)));
 					return {};
+				}
+				if (requires_integer_operands(instruction.operation)) {
+					int64_t result = 0;
+					String error;
+					if (!evaluate_integer_binary(instruction.operation, int64_t(left), int64_t(right), result, error)) {
+						fail(r_failure, instruction.span, error);
+						return {};
+					}
+					stack.push_back(result);
+					break;
 				}
 				Variant::Operator operation;
 				if (!variant_operator(instruction.operation, operation)) { fail(r_failure, instruction.span, "Unsupported binary bytecode operator."); return {}; }

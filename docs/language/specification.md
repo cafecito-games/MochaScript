@@ -40,6 +40,9 @@ Declared member, parameter, local, and return types are checked. `int` widens to
 `Variant` results remain dynamically checked at the storage or return boundary. Wrong external
 argument types and wrong runtime stores fail explicitly. Integer-only operators (`%`, shifts, and
 bitwise operations) also enforce integer operands when dynamic `Variant` values reach the VM.
+Shifts use signed 64-bit, two's-complement bit patterns: left shift wraps discarded high bits,
+right shift is arithmetic, and the shift count must be in `[0, 63]` or execution fails with
+source-located `M4001`. These rules do not depend on the engine build type or C++ signed-shift behavior.
 
 Untyped declarations infer and retain the initializer's static carrier type, so `var value = 1`
 cannot later store a `String` (`M2013`). Statically known conditions, logical operators, and logical
@@ -54,9 +57,12 @@ remains `Variant` instead of creating an unusable null-only type. `and`/`or` and
 short-circuit. Word-form `not` binds below comparison/containment and above `and`; symbolic `!`
 remains a high-precedence unary operator.
 
-Member initializers may refer to earlier members by unqualified name. `self` is unavailable until
-Godot attaches the completed script instance, so `self`-qualified initializer access is rejected
-statically with `M2030`.
+Storage for every member is first populated with its carrier default, then initializers run in
+declaration order. An unqualified read of an earlier member sees its initialized value; a read of
+the current or a later member sees its carrier default. `self` is unavailable until Godot attaches
+the completed script instance, so `self`-qualified access and unqualified calls through implicit
+`self` are rejected statically with `M2030`. The self-free `mocha_language_version()` intrinsic is
+the sole unqualified-call exception during initialization.
 
 Exponentiation retains the pinned bootstrap baseline: `**` is left-associative. Signed numeric
 literals remain tokenizer atoms (`-2 ** 2` is `4`), while an explicit spaced unary operator binds
