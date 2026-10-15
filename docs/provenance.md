@@ -41,8 +41,11 @@ that operation the destination is Mocha-owned forever.
 ```
 
 The command verifies both the immutable original import recorded in `source_imports.json` and the
-candidate pinned source. It writes separate upstream-only (`*-upstream.patch`) and candidate-to-Mocha
-(`*-mocha.patch`) deltas under the user cache, and never modifies `src/` or fixtures. To evaluate a
-newer Godot revision, update a branch's lock and expected hashes deliberately, generate both reports,
-then manually port only changes that fit the current Mocha specification. Never run a bulk overwrite.
-A GDScript behavior change is evidence, not a Mocha compatibility requirement.
+candidate pinned source. It writes separate raw upstream-only (`*-upstream.patch`) and
+candidate-to-Mocha (`*-mocha.patch`) deltas under the user cache, and never modifies `src/` or
+fixtures. The raw report is written first and remains available even when new upstream structure no
+longer fits the recorded source transform; that condition produces a warning for the Mocha report.
+To evaluate a newer Godot revision, update a branch's lock and expected hashes deliberately,
+generate both reports, then manually port only changes that fit the current Mocha specification.
+Never run a bulk overwrite. A GDScript behavior change is evidence, not a Mocha compatibility
+requirement.

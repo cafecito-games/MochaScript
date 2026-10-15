@@ -130,17 +130,15 @@ def transformed_component(custom_godot: Path, component: str, lock: dict) -> dic
     }
 
 
-def transformed_provenance(custom_godot: Path, component: str, lock: dict) -> dict[str, str]:
+def provenance_sources(custom_godot: Path, component: str, lock: dict) -> dict[str, bytes]:
     provenance = json.loads(PROVENANCE_PATH.read_text(encoding="utf-8"))
-    if provenance["transform_version"] != lock["imports"]["transform_version"]:
-        raise SystemExit("provenance and candidate use different transform versions")
     entries = provenance.get("components", {}).get(component)
     if not entries:
         raise SystemExit(f"component {component!r} has no immutable import provenance")
 
     godot_root = resolve_godot_root(custom_godot)
     baseline_commit = provenance["godot_commit"]
-    generated: dict[str, str] = {}
+    sources: dict[str, bytes] = {}
     expected = COMPONENTS[component]
     if {entry["source"] for entry in entries} != set(expected):
         raise SystemExit(f"component {component!r} provenance does not match the import map")
@@ -156,11 +154,12 @@ def transformed_provenance(custom_godot: Path, component: str, lock: dict) -> di
         destination = expected[relative]
         if entry["destination"] != destination:
             raise SystemExit(f"provenance destination mismatch for {relative}")
-        transformed = transform(relative, data)
-        if sha256(transformed.encode("utf-8")) != entry["initial_transformed_sha256"]:
-            raise SystemExit(f"provenance transformed hash mismatch for {relative}")
-        generated[destination] = transformed
-    return generated
+        if provenance["transform_version"] == lock["imports"]["transform_version"]:
+            transformed = transform(relative, data)
+            if sha256(transformed.encode("utf-8")) != entry["initial_transformed_sha256"]:
+                raise SystemExit(f"provenance transformed hash mismatch for {relative}")
+        sources[relative] = data
+    return sources
 
 
 def initial_import(custom_godot: Path, component: str, lock: dict) -> None:
@@ -240,21 +239,34 @@ def write_report(output: Path | None, report: str, label: str) -> None:
 
 def review(custom_godot: Path, component: str, lock: dict, output: Path | None,
         mocha_output: Path | None) -> int:
-    baseline = transformed_provenance(custom_godot, component, lock)
-    candidate = transformed_component(custom_godot, component, lock)
+    baseline_sources = provenance_sources(custom_godot, component, lock)
+    candidate_sources = checked_sources(custom_godot, component, lock)
     provenance = json.loads(PROVENANCE_PATH.read_text(encoding="utf-8"))
     upstream_chunks: list[str] = []
-    mocha_chunks: list[str] = []
-    for relative, candidate_text in candidate.items():
-        baseline_text = baseline[relative]
+    for source, candidate_data in candidate_sources.items():
+        baseline_data = baseline_sources[source]
         upstream_chunks.extend(
             difflib.unified_diff(
-                baseline_text.splitlines(keepends=True),
-                candidate_text.splitlines(keepends=True),
-                fromfile=f"upstream-{provenance['godot_commit']}/{relative}",
-                tofile=f"upstream-{lock['godot']['commit']}/{relative}",
+                baseline_data.decode("utf-8").splitlines(keepends=True),
+                candidate_data.decode("utf-8").splitlines(keepends=True),
+                fromfile=f"upstream-{provenance['godot_commit']}/{source}",
+                tofile=f"upstream-{lock['godot']['commit']}/{source}",
             )
         )
+    write_report(output, "".join(upstream_chunks), "upstream-only delta")
+
+    mocha_chunks: list[str] = []
+    for source, candidate_data in candidate_sources.items():
+        relative = COMPONENTS[component][source]
+        try:
+            candidate_text = transform(source, candidate_data)
+        except SystemExit as error:
+            print(
+                f"warning: upstream-only report is complete, but the Mocha divergence "
+                f"transform failed for {source}: {error}",
+                file=sys.stderr,
+            )
+            continue
         destination = ROOT / relative
         current = destination.read_text(encoding="utf-8") if destination.exists() else ""
         mocha_chunks.extend(
@@ -265,7 +277,6 @@ def review(custom_godot: Path, component: str, lock: dict, output: Path | None,
                 tofile=f"mocha-owned/{relative}",
             )
         )
-    write_report(output, "".join(upstream_chunks), "upstream-only delta")
     if mocha_output:
         write_report(mocha_output, "".join(mocha_chunks), "Mocha-owned divergence delta")
     return 0
