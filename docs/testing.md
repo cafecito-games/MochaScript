@@ -8,8 +8,8 @@ Run the complete local suite with:
 
 The build requires a C++17 compiler and exactly the SCons version pinned in
 `upstream.lock.json`. `./scripts/install_scons.sh` reproducibly installs its hash-verified wheel into
-a hash-keyed virtualenv under the user's persistent data directory. `setup.sh` and `build.sh`
-resolve it directly without relying on `PATH`; `setup.sh` intentionally verifies rather than
+a wheel-hash-and-Python-ABI-keyed virtualenv under the user's persistent data directory. `setup.sh`
+and `build.sh` resolve it directly without relying on `PATH`; `setup.sh` intentionally verifies rather than
 mutates the checkout and reports the explicit submodule initialization command when needed.
 
 It validates immutable pins, uses the cgroup CPU quota with a four-job ceiling, builds debug and

@@ -21,8 +21,8 @@ SCons build into the user prefix with:
 ./scripts/install_scons.sh
 ```
 
-The helper creates a hash-keyed virtualenv under the user's persistent data directory and installs
-only the pinned wheel with `--require-hashes --no-deps`. Build scripts resolve that managed
+The helper creates a wheel-hash-and-Python-ABI-keyed virtualenv under the user's persistent data
+directory and installs only the pinned wheel with `--require-hashes --no-deps`. Build scripts resolve that managed
 executable directly, so no shell-profile or `PATH` edit is required and PEP 668 system-Python
 restrictions do not apply.
 
@@ -39,9 +39,10 @@ layer-specific sentinel plus the final `MOCHA_VERIFY_OK` result. Both debug and 
 libraries must build, the release library and entry symbol are load-probed without shipping the
 native test harness, and isolated editor/recognition/execution smoke tests run against the release
 binary. Every script resource under `project/` must have a committed UID sidecar that editor import
-neither rewrites nor leaves untracked. `materialize_upstream.sh` verifies
-the custom-Godot/Godot source and import pins; Linux CI additionally verifies the downloaded SCons
-wheel and editor archive hashes.
+neither rewrites nor leaves untracked. `materialize_upstream.sh` verifies the custom-Godot/Godot
+commit, tag, patcher configuration, and patch pins; initial import and `review_upstream.sh` verify
+the component source hashes. Linux CI additionally verifies the downloaded SCons wheel and editor
+archive hashes.
 
 The fixture covers typed members, locals and functions, arrays, dictionaries, indexing, calls,
 conditionals, state mutation, and interaction with a Godot `Node`. Negative fixtures assert stable

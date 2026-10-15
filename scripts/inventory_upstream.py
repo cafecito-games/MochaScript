@@ -188,7 +188,8 @@ def main() -> None:
     include_counts: Counter[str] = Counter()
     unique_headers: set[str] = set()
     for path in git_tracked_files(godot, lock["godot"]["gdscript_root"]):
-        if path.suffix not in {".cpp", ".h"} or "tests" in path.parts:
+        relative_path = path.relative_to(godot)
+        if path.suffix not in {".cpp", ".h"} or "tests" in relative_path.parts:
             continue
         for header in INCLUDE_RE.findall(path.read_text(encoding="utf-8")):
             if header.startswith(ENGINE_PREFIXES):

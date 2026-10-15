@@ -331,8 +331,9 @@ def review(custom_godot: Path, component: str, lock: dict, output: Path | None,
     review_incomplete = bool(candidate_issues)
     for source, candidate_data in candidate_sources.items():
         relative = COMPONENTS[component][source]
+        if source in candidate_issues:
+            mocha_chunks.append(f"# CANDIDATE INCOMPLETE for {source}: {candidate_issues[source]}\n")
         if candidate_data is None:
-            mocha_chunks.append(f"# CANDIDATE FILE ABSENT for {source}\n")
             destination = ROOT / relative
             current = destination.read_text(encoding="utf-8") if destination.exists() else ""
             mocha_chunks.extend(
