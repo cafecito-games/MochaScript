@@ -30,7 +30,7 @@ target_parent=$(dirname "$target")
 mkdir -p "$target_parent"
 df -h "$cache_base"
 
-if [[ ! -d "$target/.git" ]]; then
+if [[ ! -e "$target/.git" ]]; then
     if [[ -e "$target" ]]; then
         echo "Refusing to replace non-repository path: $target" >&2
         exit 1
@@ -45,7 +45,7 @@ if [[ ! -d "$target/.git" ]]; then
         exit 1
     fi
     git -C "$custom_temp" checkout --detach "$custom_commit"
-    mv "$custom_temp" "$target"
+    mv -T "$custom_temp" "$target"
     trap - EXIT
 elif [[ $(git -C "$target" rev-parse HEAD) != "$custom_commit" ]]; then
     echo "Existing custom-godot checkout is not at pinned commit $custom_commit: $target" >&2
@@ -84,7 +84,7 @@ if [[ ! -e "$godot_root/.git" ]]; then
     if [[ -d "$godot_root" ]]; then
         rmdir "$godot_root"
     fi
-    mv "$godot_temp" "$godot_root"
+    mv -T "$godot_temp" "$godot_root"
     trap - EXIT
     git -C "$target" submodule absorbgitdirs godot
 elif [[ $(git -C "$godot_root" rev-parse HEAD) != "$godot_commit" ]]; then
