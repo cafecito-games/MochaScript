@@ -29,12 +29,20 @@ godot::Error MochaScriptResourceSaver::_save(const godot::Ref<godot::Resource> &
 	const godot::Ref<MochaScript> script(p_resource);
 	if (script.is_null()) return godot::ERR_INVALID_PARAMETER;
 
-	const godot::String directory_path = p_path.get_base_dir();
+	godot::String target_path = p_path;
+	godot::Ref<godot::DirAccess> requested_directory = godot::DirAccess::open(p_path.get_base_dir());
+	if (requested_directory.is_null()) return godot::DirAccess::get_open_error();
+	if (requested_directory->is_link(p_path.get_file())) {
+		target_path = requested_directory->read_link(p_path.get_file());
+		if (target_path.is_relative_path()) target_path = p_path.get_base_dir().path_join(target_path);
+	}
+
+	const godot::String directory_path = target_path.get_base_dir();
 	godot::Ref<godot::DirAccess> directory = godot::DirAccess::open(directory_path);
 	if (directory.is_null()) return godot::DirAccess::get_open_error();
-	const godot::String temporary_name = p_path.get_file() + ".tmp." +
+	const godot::String temporary_name = "." + target_path.get_file() + "." +
 			godot::String::num_int64(godot::OS::get_singleton()->get_process_id()) + "." +
-			godot::String::num_int64(save_nonce.fetch_add(1, std::memory_order_relaxed));
+			godot::String::num_int64(save_nonce.fetch_add(1, std::memory_order_relaxed)) + ".tmp";
 	const godot::String temporary_path = directory_path.path_join(temporary_name);
 	const godot::String source = script->_get_source_code();
 	auto discard_temporary = [&directory, &temporary_name]() {
@@ -56,15 +64,24 @@ godot::Error MochaScriptResourceSaver::_save(const godot::Ref<godot::Resource> &
 		return godot::ERR_FILE_CANT_WRITE;
 	}
 
-	godot::Ref<godot::FileAccess> persisted = godot::FileAccess::open(temporary_path, godot::FileAccess::READ);
-	if (persisted.is_null() || persisted->get_as_text() != source) {
-		if (persisted.is_valid()) persisted->close();
+	const godot::PackedByteArray expected_bytes = source.to_utf8_buffer();
+	if (godot::FileAccess::get_size(temporary_path) != expected_bytes.size() ||
+			godot::FileAccess::get_file_as_bytes(temporary_path) != expected_bytes) {
 		discard_temporary();
 		return godot::ERR_FILE_CANT_WRITE;
 	}
-	persisted->close();
+	if (godot::FileAccess::file_exists(target_path)) {
+		const godot::BitField<godot::FileAccess::UnixPermissionFlags> permissions = godot::FileAccess::get_unix_permissions(target_path);
+		if (permissions != 0) {
+			const godot::Error permission_error = godot::FileAccess::set_unix_permissions(temporary_path, permissions);
+			if (permission_error != godot::OK && permission_error != godot::ERR_UNAVAILABLE) {
+				discard_temporary();
+				return permission_error;
+			}
+		}
+	}
 
-	const godot::Error rename_error = directory->rename(temporary_name, p_path.get_file());
+	const godot::Error rename_error = directory->rename(temporary_name, target_path.get_file());
 	if (rename_error != godot::OK) discard_temporary();
 	return rename_error;
 }

@@ -55,6 +55,34 @@ func _initialize() -> void:
 			if saved == null or not saved.get_source_code().contains("return 8"):
 				failures.append("replaced MochaScript did not contain the latest saved source")
 
+	var bom_script := MochaScript.new()
+	var bom_source := "\ufeffextends RefCounted\n"
+	bom_script.set_source_code(bom_source)
+	var bom_path := "user://mocha_editor_bom_save_test.mocha"
+	if ResourceSaver.save(bom_script, bom_path) != OK or FileAccess.get_file_as_bytes(bom_path) != bom_source.to_utf8_buffer():
+		failures.append("editor saver did not preserve leading-BOM source bytes")
+
+	var target_path := "user://mocha_editor_symlink_target.mocha"
+	var link_path := "user://mocha_editor_symlink.mocha"
+	var target_file := FileAccess.open(target_path, FileAccess.WRITE)
+	if target_file == null:
+		failures.append("editor could not create the symlink save target")
+	else:
+		target_file.store_string("extends RefCounted\n")
+		target_file.close()
+		var user_dir := DirAccess.open("user://")
+		var target_absolute := ProjectSettings.globalize_path(target_path)
+		var link_absolute := ProjectSettings.globalize_path(link_path)
+		var permission_preserved := FileAccess.set_unix_permissions(target_path, 416) == OK
+		if user_dir != null and user_dir.create_link(target_absolute, link_absolute) == OK:
+			unsaved.set_source_code("extends RefCounted\nfunc saved_value() -> int:\n\treturn 9\n")
+			if ResourceSaver.save(unsaved, link_path) != OK:
+				failures.append("editor could not save a MochaScript through a symlink")
+			elif not user_dir.is_link(link_absolute) or not FileAccess.get_file_as_string(target_path).contains("return 9"):
+				failures.append("saving through a symlink replaced the link instead of its target")
+			elif permission_preserved and FileAccess.get_unix_permissions(target_path) != 416:
+				failures.append("saving through a symlink changed the target permissions")
+
 	if failures.is_empty():
 		print("MOCHA_EDITOR_OK")
 		return
