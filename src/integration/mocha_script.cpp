@@ -54,11 +54,21 @@ void MochaScript::_bind_methods() {
 	godot::ClassDB::bind_method(godot::D_METHOD("get_token_count"), &MochaScript::get_token_count);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_diagnostics"), &MochaScript::get_diagnostics);
 	godot::ClassDB::bind_method(godot::D_METHOD("is_compilation_valid"), &MochaScript::is_compilation_valid);
+	godot::ClassDB::bind_method(godot::D_METHOD("is_placeholder_instance", "object"), &MochaScript::is_placeholder_instance);
 }
 
 int64_t MochaScript::get_token_count() const { return token_count; }
 godot::TypedArray<godot::Dictionary> MochaScript::get_diagnostics() const { return diagnostics; }
 bool MochaScript::is_compilation_valid() const { return valid; }
+bool MochaScript::is_placeholder_instance(godot::Object *p_object) const {
+	if (p_object == nullptr) return false;
+	const uint64_t owner_id = p_object->get_instance_id();
+	std::lock_guard<std::mutex> lock(instances_mutex);
+	for (const auto &entry : placeholder_instances) {
+		if (entry.second == owner_id) return true;
+	}
+	return false;
+}
 const CompiledFunction *MochaScript::find_function(const godot::StringName &p_name) const {
 	return compiled_module ? compiled_module->find_function(p_name) : nullptr;
 }
@@ -79,7 +89,10 @@ void MochaScript::notify_instance_freed(MochaScriptInstance *p_instance) {
 	instances.erase(p_instance);
 }
 bool MochaScript::_editor_can_reload_from_file() { return true; }
-void MochaScript::_placeholder_erased(void *) {}
+void MochaScript::_placeholder_erased(void *p_placeholder) {
+	std::lock_guard<std::mutex> lock(instances_mutex);
+	placeholder_instances.erase(p_placeholder);
+}
 bool MochaScript::_can_instantiate() const {
 	return valid && compiled_module != nullptr &&
 			(_is_tool() || !godot::Engine::get_singleton()->is_editor_hint());
@@ -121,8 +134,13 @@ void *MochaScript::_instance_create(godot::Object *p_for_object) const {
 void *MochaScript::_placeholder_instance_create(godot::Object *p_for_object) const {
 	MochaScriptLanguage *language = MochaScriptLanguage::get_singleton();
 	if (language == nullptr || p_for_object == nullptr) return nullptr;
-	return godot::gdextension_interface::placeholder_script_instance_create(language->_owner,
+	void *placeholder = godot::gdextension_interface::placeholder_script_instance_create(language->_owner,
 			const_cast<MochaScript *>(this)->_owner, p_for_object->_owner);
+	if (placeholder != nullptr) {
+		std::lock_guard<std::mutex> lock(instances_mutex);
+		placeholder_instances[placeholder] = p_for_object->get_instance_id();
+	}
+	return placeholder;
 }
 bool MochaScript::_has_source_code() const { return true; }
 godot::String MochaScript::_get_source_code() const { return source_code; }
@@ -291,8 +309,11 @@ godot::TypedArray<godot::StringName> MochaScript::_get_members() const {
 bool MochaScript::_is_placeholder_fallback_enabled() const { return false; }
 godot::Variant MochaScript::_get_rpc_config() const { return godot::Dictionary(); }
 bool MochaScript::_instance_has(godot::Object *p_object) const {
-	MochaScriptInstance *instance = MochaScriptInstance::from_owner(p_object);
-	return instance != nullptr && instance->script.ptr() == this;
+	MochaScriptLanguage *language = MochaScriptLanguage::get_singleton();
+	if (p_object == nullptr || language == nullptr) return false;
+	void *data = godot::gdextension_interface::object_get_script_instance(p_object->_owner, language->_owner);
+	std::lock_guard<std::mutex> lock(instances_mutex);
+	return data != nullptr && instances.has(reinterpret_cast<MochaScriptInstance *>(data));
 }
 
 } // namespace mocha_script

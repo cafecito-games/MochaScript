@@ -15,6 +15,7 @@
 #include <godot_cpp/templates/hash_set.hpp>
 
 #include <mutex>
+#include <unordered_map>
 
 namespace mocha_script {
 
@@ -30,6 +31,7 @@ class MochaScript final : public godot::ScriptExtension {
 	std::shared_ptr<CompiledModule> compiled_module;
 	mutable std::mutex instances_mutex;
 	mutable godot::HashSet<class MochaScriptInstance *> instances;
+	mutable std::unordered_map<void *, uint64_t> placeholder_instances;
 
 protected:
 	static void _bind_methods();
@@ -38,6 +40,7 @@ public:
 	int64_t get_token_count() const;
 	godot::TypedArray<godot::Dictionary> get_diagnostics() const;
 	bool is_compilation_valid() const;
+	bool is_placeholder_instance(godot::Object *p_object) const;
 	void set_diagnostic_path_for_validation(const godot::String &p_path) { diagnostic_path = p_path; }
 	const Program *get_program() const { return program.get(); }
 	const CompiledModule *get_compiled_module() const { return compiled_module.get(); }

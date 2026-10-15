@@ -15,6 +15,8 @@ func _initialize() -> void:
 		host.set_script(script)
 		if host.get_script() != script:
 			failures.append("editor did not attach the MochaScript placeholder")
+		elif not script.is_placeholder_instance(host):
+			failures.append("editor attachment has no MochaScript placeholder instance")
 		if host.get(&"total") == 1:
 			failures.append("editor attachment ran the MochaScript member initializer")
 		host.free()
