@@ -17,8 +17,6 @@
 // than hidden behind a no-op shim.
 
 #include <godot_cpp/classes/editor_settings.hpp>
-#include <godot_cpp/classes/text_server.hpp>
-#include <godot_cpp/classes/text_server_manager.hpp>
 #include <godot_cpp/core/defs.hpp>
 #include <godot_cpp/core/error_macros.hpp>
 #include <godot_cpp/templates/hash_map.hpp>

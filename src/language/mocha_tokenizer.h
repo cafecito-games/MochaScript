@@ -258,9 +258,6 @@ class MochaTokenizerText : public MochaTokenizer {
 	int position = 0;
 	int length = 0;
 	Vector<int> continuation_lines;
-#ifdef DEBUG_ENABLED
-	Vector<String> keyword_list;
-#endif // DEBUG_ENABLED
 
 #ifdef TOOLS_ENABLED
 	HashMap<int, CommentData> comments;
@@ -275,10 +272,6 @@ class MochaTokenizerText : public MochaTokenizer {
 	String _get_indent_char_name(char32_t ch);
 	void _skip_whitespace();
 	void check_indent();
-
-#ifdef DEBUG_ENABLED
-	void make_keyword_list();
-#endif // DEBUG_ENABLED
 
 	Token make_error(const String &p_message);
 	void push_error(const String &p_message);

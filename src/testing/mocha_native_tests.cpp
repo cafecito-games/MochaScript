@@ -49,6 +49,21 @@ godot::PackedStringArray MochaNativeTests::run() const {
 	}
 
 	{
+		MochaTokenizerText tokenizer;
+		tokenizer.set_source_code("var café = 1\n");
+		bool rejected = false;
+		for (;;) {
+			const MochaTokenizer::Token token = tokenizer.scan();
+			if (token.type == MochaTokenizer::Token::ERROR) {
+				rejected = godot::String(token.literal).contains("ASCII-only");
+				break;
+			}
+			if (token.type == MochaTokenizer::Token::TK_EOF) break;
+		}
+		if (!rejected) failures.push_back("tokenizer: non-ASCII identifier was not deterministically rejected");
+	}
+
+	{
 		// Keep a real resource cached at the validation path. Validation must use the
 		// supplied diagnostic path without trying to occupy that ResourceCache key.
 		const godot::Ref<godot::Resource> cached = godot::ResourceLoader::get_singleton()->load("res://example.mocha");
@@ -175,6 +190,11 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			"\treturn result\n"
 			"func dynamic_suffix(value: Variant) -> Variant:\n"
 			"\treturn value + \"!\"\n"
+			"func dynamic_modulo(value: Variant) -> Variant:\n"
+			"\treturn value % 5\n"
+			"func dynamic_modulo_assign(value: Variant) -> Variant:\n"
+			"\tvalue %= 5\n"
+			"\treturn value\n"
 			"func public_match() -> bool:\n"
 			"\treturn \"abc\".match(\"a*\")\n"
 			"func forward_wrong(value: Variant) -> int:\n"
@@ -269,6 +289,10 @@ godot::PackedStringArray MochaNativeTests::run() const {
 					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(3.5)) failures.push_back("analyzer: Variant arithmetic was incorrectly narrowed");
 					result = invoke("dynamic_suffix", { godot::String("Mocha") }, call_error, failure);
 					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant("Mocha!")) failures.push_back("analyzer: Variant plus String was rejected or narrowed");
+					invoke("dynamic_modulo", { godot::String("%d") }, call_error, failure);
+					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty() || failure.span.line < 1) failures.push_back("vm: dynamic String modulo did not fail with a source-located runtime error");
+					invoke("dynamic_modulo_assign", { godot::String("%d") }, call_error, failure);
+					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty() || failure.span.line < 1) failures.push_back("vm: dynamic String modulo assignment did not fail with a source-located runtime error");
 					result = invoke("public_match", {}, call_error, failure);
 					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(true)) failures.push_back("parser: contextual member name 'match' was rejected");
 					result = invoke("power_associativity", {}, call_error, failure);
@@ -547,6 +571,20 @@ godot::PackedStringArray MochaNativeTests::run() const {
 		godot::Variant converted;
 		if (MochaVM::accepts(stale, TypeRef::make(TypeKind::OBJECT, "Node"), converted)) {
 			failures.push_back("vm: freed object was accepted at a typed boundary");
+		}
+	}
+
+	{
+		Program invalid;
+		MochaParser invalid_parser;
+		invalid_parser.parse("var first: int = 1\nvar second: Variant = self.first\n", "res://native_self_initializer.mocha", invalid);
+		MochaAnalyzer analyzer;
+		if (analyzer.analyze(invalid, "res://native_self_initializer.mocha") != godot::ERR_COMPILATION_FAILED) {
+			failures.push_back("analyzer: self-qualified member initializer was accepted");
+		} else {
+			bool found = false;
+			for (const Diagnostic &diagnostic : analyzer.get_diagnostics()) found |= diagnostic.code == "M2030";
+			if (!found) failures.push_back("analyzer: self-qualified member initializer did not produce M2030");
 		}
 	}
 

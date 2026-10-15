@@ -15,6 +15,7 @@ class MochaAnalyzer {
 	struct Context {
 		HashMap<StringName, TypeRef> locals;
 		TypeRef return_type;
+		bool in_member_initializer = false;
 	};
 
 	Program *program = nullptr;

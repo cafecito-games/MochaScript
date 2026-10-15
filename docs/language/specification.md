@@ -6,6 +6,8 @@ another Mocha-owned specification test says otherwise.
 ## Source and declarations
 
 - Source files use `.mocha`; indentation forms blocks and `#` starts a comment.
+- Bootstrap identifiers are ASCII-only; non-ASCII identifier characters fail lexically with
+  `M0001`, independent of build type or active text services.
 - A file may begin with `extends Type`; the default base is `RefCounted`.
 - Top-level `var name[: Type] [= expression]` declares an instance member.
 - `func name(parameters) [-> Type]:` declares an instance method; an omitted return type is
@@ -36,7 +38,8 @@ divergence ledger. Its name is reserved; declaring a method with that name repor
 
 Declared member, parameter, local, and return types are checked. `int` widens to `float`; unknown
 `Variant` results remain dynamically checked at the storage or return boundary. Wrong external
-argument types and wrong runtime stores fail explicitly.
+argument types and wrong runtime stores fail explicitly. Integer-only operators (`%`, shifts, and
+bitwise operations) also enforce integer operands when dynamic `Variant` values reach the VM.
 
 Untyped declarations infer and retain the initializer's static carrier type, so `var value = 1`
 cannot later store a `String` (`M2013`). Statically known conditions, logical operators, and logical
@@ -50,6 +53,10 @@ Typed declarations without an initializer receive carrier defaults (`false`, `0`
 remains `Variant` instead of creating an unusable null-only type. `and`/`or` and `&&`/`||`
 short-circuit. Word-form `not` binds below comparison/containment and above `and`; symbolic `!`
 remains a high-precedence unary operator.
+
+Member initializers may refer to earlier members by unqualified name. `self` is unavailable until
+Godot attaches the completed script instance, so `self`-qualified initializer access is rejected
+statically with `M2030`.
 
 Exponentiation retains the pinned bootstrap baseline: `**` is left-associative. Signed numeric
 literals remain tokenizer atoms (`-2 ** 2` is `4`), while an explicit spaced unary operator binds

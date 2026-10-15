@@ -550,18 +550,6 @@ PackedStringArray MochaTokenizer::get_keyword_spellings() {
 	return result;
 }
 
-#ifdef DEBUG_ENABLED
-void MochaTokenizerText::make_keyword_list() {
-#define KEYWORD_LINE(keyword, token_type) keyword,
-#define KEYWORD_GROUP_IGNORE(group)
-	keyword_list = {
-		KEYWORDS(KEYWORD_GROUP_IGNORE, KEYWORD_LINE)
-	};
-#undef KEYWORD_LINE
-#undef KEYWORD_GROUP_IGNORE
-}
-#endif // DEBUG_ENABLED
-
 MochaTokenizer::Token MochaTokenizerText::potential_identifier() {
 	bool only_ascii = _peek(-1) < 128;
 
@@ -581,36 +569,12 @@ MochaTokenizer::Token MochaTokenizerText::potential_identifier() {
 	}
 
 	String name = source.substr(start_position, len);
+	if (!only_ascii) {
+		return make_error(vformat(R"(Identifier "%s" is not allowed; bootstrap identifiers are ASCII-only.)", name));
+	}
 	if (len < MIN_KEYWORD_LENGTH || len > MAX_KEYWORD_LENGTH) {
 		// Cannot be a keyword, as the length doesn't match any.
 		return make_identifier(name);
-	}
-
-	if (!only_ascii) {
-		// Kept here in case the order with push_error matters.
-		Token id = make_identifier(name);
-
-#ifdef DEBUG_ENABLED
-		// GDExtension reaches the public text service through its manager; the
-		// module-only TS macro is not part of godot-cpp.
-		TextServerManager *manager = TextServerManager::get_singleton();
-		if (manager != nullptr) {
-			Ref<TextServer> text_server = manager->get_primary_interface();
-			if (text_server.is_valid() && text_server->has_feature(TextServer::FEATURE_UNICODE_SECURITY)) {
-				PackedStringArray keywords;
-				for (const String &keyword : keyword_list) {
-					keywords.push_back(keyword);
-				}
-				int64_t confusable = text_server->is_confusable(name, keywords);
-				if (confusable >= 0) {
-					push_error(vformat(R"(Identifier "%s" is visually similar to the MochaScript keyword "%s" and thus not allowed.)", name, keyword_list[confusable]));
-				}
-			}
-		}
-#endif // DEBUG_ENABLED
-
-		// Cannot be a keyword, as keywords are ASCII only.
-		return id;
 	}
 
 	// Define some helper macros for the switch case.
@@ -1649,9 +1613,6 @@ MochaTokenizerText::MochaTokenizerText() {
 		tab_size = EditorSettings::get_singleton()->get_setting("text_editor/behavior/indent/size");
 	}
 #endif // TOOLS_ENABLED
-#ifdef DEBUG_ENABLED
-	make_keyword_list();
-#endif // DEBUG_ENABLED
 }
 
 } // namespace mocha_script

@@ -74,6 +74,21 @@ bool take_nested_failure(const RuntimeFailure &p_captured, RuntimeFailure &r_fai
 	return true;
 }
 
+bool requires_integer_operands(MochaTokenizer::Token::Type p_operation) {
+	using Token = MochaTokenizer::Token;
+	switch (p_operation) {
+		case Token::PERCENT:
+		case Token::LESS_LESS:
+		case Token::GREATER_GREATER:
+		case Token::AMPERSAND:
+		case Token::PIPE:
+		case Token::CARET:
+			return true;
+		default:
+			return false;
+	}
+}
+
 } // namespace
 
 bool MochaVM::convert_value(const Variant &p_value, const TypeRef &p_type, Variant &r_converted) {
@@ -354,6 +369,10 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 			case OpCode::UNARY: {
 				Variant value;
 				if (!pop(instruction, value)) return {};
+				if (instruction.operation == MochaTokenizer::Token::TILDE && value.get_type() != Variant::INT) {
+					fail(r_failure, instruction.span, "Bitwise negation requires an int operand at runtime.");
+					return {};
+				}
 				Variant::Operator operation;
 				if (instruction.operation == MochaTokenizer::Token::MINUS) operation = Variant::OP_NEGATE;
 				else if (instruction.operation == MochaTokenizer::Token::PLUS) operation = Variant::OP_POSITIVE;
@@ -372,6 +391,12 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				Variant right;
 				Variant left;
 				if (!pop(instruction, right) || !pop(instruction, left)) return {};
+				if (requires_integer_operands(instruction.operation) &&
+						(left.get_type() != Variant::INT || right.get_type() != Variant::INT)) {
+					fail(r_failure, instruction.span, vformat("Operator '%s' requires int operands at runtime.",
+							MochaTokenizer::get_token_name(instruction.operation)));
+					return {};
+				}
 				Variant::Operator operation;
 				if (!variant_operator(instruction.operation, operation)) { fail(r_failure, instruction.span, "Unsupported binary bytecode operator."); return {}; }
 				Variant result;

@@ -193,6 +193,9 @@ TypeRef MochaAnalyzer::analyze_expression(ExprPtr &p_expression, Context &r_cont
 			result = type_of_literal(p_expression->literal);
 			break;
 		case ExprKind::SELF:
+			if (r_context.in_member_initializer) {
+				report(p_expression->span, "M2030", "'self' is unavailable while member initializers are running.");
+			}
 			result = TypeRef::make(TypeKind::OBJECT, program->base_type);
 			break;
 		case ExprKind::IDENTIFIER: {
@@ -397,6 +400,7 @@ Error MochaAnalyzer::analyze(Program &p_program, const String &p_path) {
 	}
 
 	Context member_context;
+	member_context.in_member_initializer = true;
 	for (MemberDecl &member : p_program.members) {
 		if (!member.initializer) continue;
 		const TypeRef value = analyze_expression(member.initializer, member_context);

@@ -20,16 +20,18 @@ only when an entry or a MochaScript specification test says it is.
 | file extension | intentional divergence | Source files use `.mocha`. | recognition test |
 | language identity | intentional divergence | Godot reports `MochaScript`, never `GDScript`. | recognition test |
 | tokenizer and grammar | inherited subset | The pinned tokenizer plus the specified executable grammar are Mocha-owned. | native tests and pinned corpus |
+| identifier policy | intentional divergence | Bootstrap identifiers are ASCII-only and reject non-ASCII text deterministically with `M0001`. | native tokenizer test |
 | exponentiation precedence | inherited | `**` is left-associative; signed literals and explicit unary operators retain the pinned tokenizer/parser behavior. | native precedence tests |
 | inferred declarations | intentional divergence | An untyped non-null initializer fixes the declaration's carrier type; later incompatible stores are `M2013`. | native analyzer test |
 | static truthiness | intentional divergence | Statically known conditions, logical operands, and negations require `bool`. Dynamic `Variant` operands retain runtime truthiness in the bootstrap. | native analyzer tests |
-| percent operator | intentional divergence | `%` is integer modulo only; String formatting is rejected with `M2003`. | native analyzer test |
+| percent operator | intentional divergence | `%` is integer modulo only; String formatting is rejected statically with `M2003` or dynamically with `M4001`. | native analyzer and VM tests |
 | remaining static analysis | inherited subset | Declared types and the operations in the bootstrap specification are checked. | native and negative fixtures |
 | compiler and runtime | intentional ownership | Mocha bytecode and VM execute scripts; GDScript is never called. | vertical slice |
 | diagnostics | intentional divergence | Stable `M0xxx`–`M4xxx` records include source locations. | negative fixtures |
 | global utility functions | unsupported | Unqualified unresolved calls target the host object; GDScript globals such as `print` are not resolved. | specification and host-call architecture |
 | language version intrinsic | intentional divergence | `mocha_language_version()` returns Mocha bootstrap metadata. | vertical slice canary |
 | intrinsic and constant names | intentional divergence | The intrinsic and `PI`/`TAU`/`INF`/`NAN` names are reserved and cannot be shadowed. | native parser/analyzer tests |
+| initializer `self` access | unsupported | Member initializers use unqualified earlier-member reads; `self` is unavailable before instance attachment and reports `M2030`. | native analyzer test |
 | GDScript interoperability | unsupported | One Godot object has one script instance; Mocha does not inherit from or delegate to GDScript. | architecture boundary and instance test |
 
 ## Status vocabulary
