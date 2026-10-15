@@ -19,13 +19,14 @@ struct RuntimeFailure {
 	String message;
 	SourceSpan span;
 	bool reported = false;
+	bool preserve_call_error = false;
 };
 
 class MochaVM {
 	static Variant execute(const CompiledModule &p_module, const CompiledFunction &p_function,
 			Object *p_owner, Vector<Variant> &r_members, const Variant **p_arguments,
 			int p_argument_count, GDExtensionCallError &r_call_error,
-			RuntimeFailure &r_failure, const SourceSpan &p_entry_span);
+			RuntimeFailure &r_failure, const SourceSpan &p_entry_span, bool p_external_entry);
 	static bool convert_value(const Variant &p_value, const TypeRef &p_type, Variant &r_converted);
 	static bool variant_operator(MochaTokenizer::Token::Type p_operation, Variant::Operator &r_operator);
 

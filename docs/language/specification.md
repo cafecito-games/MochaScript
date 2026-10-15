@@ -14,12 +14,14 @@ another Mocha-owned specification test says otherwise.
   `Variant`, while explicit `void` is supported only as a return type.
 - Supported carriers are `Variant`, `bool`, `int`, `float`, `String`, `Array`, `Dictionary`, and
   Godot object class names. `Array[T]` and `Dictionary[K, V]` syntax is accepted, but its element
-  types are deliberately erased and not yet enforced. Other carriers reject type arguments with
-  `M1012`.
+  types are deliberately erased at runtime and not yet enforced on stored elements. Element type
+  names are still validated: `void` and unknown object classes report `M2026` and `M2024`.
+  Other carriers reject type arguments with `M1012`.
 
 ## Statements and expressions
 
-Local variables, assignment and arithmetic compound assignment, `if`/`elif`/`else`, `while`, `return`,
+Local variables, assignment (`=`) and compound assignment (`+=`, `-=`, `*=`, `/=`, `%=`),
+`if`/`elif`/`else`, `while`, `return`,
 `pass`, and expression statements execute. Expressions include literals, arrays, dictionaries,
 indexing, member reads, calls, unary operators, arithmetic, comparison, logical, containment, and
 bitwise operators. `self` names the host object. `PI`, `TAU`, `INF`, and `NAN` are built-in numeric
@@ -43,6 +45,9 @@ bitwise operations) also enforce integer operands when dynamic `Variant` values 
 Shifts use signed 64-bit, two's-complement bit patterns: left shift wraps discarded high bits,
 right shift is arithmetic, and the shift count must be in `[0, 63]` or execution fails with
 source-located `M4001`. These rules do not depend on the engine build type or C++ signed-shift behavior.
+An external call with a wrong typed argument also preserves Godot's `INVALID_ARGUMENT`, argument
+index, and expected carrier while publishing the source-located Mocha failure. Failures inside a
+nested Mocha call remain script runtime failures rather than being misattributed to the host caller.
 
 Untyped declarations infer and retain the initializer's static carrier type, so `var value = 1`
 cannot later store a `String` (`M2013`). Statically known conditions, logical operators, and logical
@@ -64,6 +69,10 @@ the completed script instance, so `self`-qualified access and unqualified calls 
 `self` are rejected statically with `M2030`. The self-free `mocha_language_version()` intrinsic is
 the sole unqualified-call exception during initialization.
 
+A script member may not reuse a property name exposed by its native base class or ancestors;
+analysis reports `M2031`. This prevents the script-instance property table from silently shadowing
+the host object's property contract.
+
 Exponentiation retains the pinned bootstrap baseline: `**` is left-associative. Signed numeric
 literals remain tokenizer atoms (`-2 ** 2` is `4`), while an explicit spaced unary operator binds
 below exponentiation (`- 2 ** 2` is `-4`). Like the VM carrier operation, an integer base and
@@ -72,6 +81,10 @@ integer exponent produce `int`; a float operand produces `float`.
 The bootstrap frontend rejects recursively nested expressions, constructed expression trees, and
 statement nesting deeper than 256 nodes with stable parser/analyzer diagnostics instead of risking
 the native stack.
+
+Each root VM entry has a safety budget of one million bytecode instructions and at most 128 nested
+Mocha call frames. Nested calls share the root instruction budget. Exceeding either limit reports a
+source-located `M4001`; stores and host effects completed before the failure are not rolled back.
 
 ## Unsupported now
 
@@ -82,7 +95,9 @@ named/default/variadic arguments, setters, index/member assignment, super calls,
 functions such as `print`, the `is` type-test operator (`M2091`), preload/load semantics, RPC annotations, and editor code completion are
 not implemented. Recognized unsupported statement forms report `M1090`; unsupported top-level
 declarations report `M1008`; assignment to a non-name target reports `M2090`; compiler gaps report
-an `M3xxx` diagnostic. No unsupported form may execute as a successful no-op.
+an `M3xxx` diagnostic. Exponent, shift, and bitwise compound assignments (`**=`, `<<=`, `>>=`,
+`&=`, `|=`, `^=`) are recognized but unsupported and report `M1090`. No unsupported form may
+execute as a successful no-op.
 
 The bootstrap parser is deliberately a coherent subset rather than a claim of full GDScript
 parity. Pinned GDScript fixtures currently prove only tokenizer/parser/analyzer acceptance or

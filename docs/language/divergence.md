@@ -26,6 +26,9 @@ only when an entry or a MochaScript specification test says it is.
 | static truthiness | intentional divergence | Statically known conditions, logical operands, and negations require `bool`. Dynamic `Variant` operands retain runtime truthiness in the bootstrap. | native analyzer tests |
 | percent operator | intentional divergence | `%` is integer modulo only; String formatting is rejected statically with `M2003` or dynamically with `M4001`. | native analyzer and VM tests |
 | shift semantics | intentional divergence | Shifts operate on signed 64-bit two's-complement bit patterns; left shift wraps, right shift is arithmetic, and counts outside `[0, 63]` report `M4001`. | native VM tests |
+| collection element types | inherited syntax, bootstrap erasure | `Array[T]` and `Dictionary[K, V]` retain and validate type syntax, but element stores are not yet enforced at runtime. | native parser/analyzer tests |
+| native property names | intentional divergence | Script members cannot shadow properties of their native base class or ancestors; collisions report `M2031`. | native analyzer test |
+| VM safety budgets | intentional divergence | Each root entry receives one million bytecode operations and 128 nested Mocha frames; `M4001` aborts without rolling back prior effects. | native VM tests |
 | remaining static analysis | inherited subset | Declared types and the operations in the bootstrap specification are checked. | native and negative fixtures |
 | compiler and runtime | intentional ownership | Mocha bytecode and VM execute scripts; GDScript is never called. | vertical slice |
 | diagnostics | intentional divergence | Stable `M0xxx`–`M4xxx` records include source locations. | negative fixtures |

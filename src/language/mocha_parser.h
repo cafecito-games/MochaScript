@@ -50,6 +50,7 @@ class MochaParser {
 	ExprPtr parse_primary();
 	int binary_precedence(MochaTokenizer::Token::Type p_type) const;
 	bool is_assignment(MochaTokenizer::Token::Type p_type) const;
+	bool is_unsupported_assignment(MochaTokenizer::Token::Type p_type) const;
 
 public:
 	Error parse(const String &p_source, const String &p_path, Program &r_program);

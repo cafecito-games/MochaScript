@@ -176,6 +176,9 @@ void MochaAnalyzer::validate_type(const TypeRef &p_type, const SourceSpan &p_spa
 			(p_type.name.is_empty() || !ClassDB::class_exists(p_type.name))) {
 		report(p_span, "M2024", vformat("Unknown or unsupported object type '%s' %s.", String(p_type.name), p_context));
 	}
+	for (const TypeRef &parameter : p_type.parameters) {
+		validate_type(parameter, parameter.span, vformat("inside %s", p_context), false);
+	}
 }
 
 TypeRef MochaAnalyzer::analyze_expression(ExprPtr &p_expression, Context &r_context, bool p_value_required) {
@@ -387,8 +390,22 @@ Error MochaAnalyzer::analyze(Program &p_program, const String &p_path) {
 	}
 
 	HashMap<StringName, bool> functions;
+	HashMap<StringName, bool> base_properties;
+	if (ClassDB::class_exists(p_program.base_type)) {
+		const TypedArray<Dictionary> property_list = ClassDB::class_get_property_list(p_program.base_type);
+		for (int64_t index = 0; index < property_list.size(); ++index) {
+			const Dictionary property = property_list[index];
+			const uint32_t usage = uint32_t(int64_t(property.get("usage", 0)));
+			if ((usage & (PROPERTY_USAGE_CATEGORY | PROPERTY_USAGE_GROUP | PROPERTY_USAGE_SUBGROUP)) != 0) continue;
+			const StringName property_name = property.get("name", StringName());
+			if (!property_name.is_empty()) base_properties.insert(property_name, true);
+		}
+	}
 	for (MemberDecl &member : p_program.members) {
 		validate_type(member.type, member.span, vformat("for member '%s'", String(member.name)));
+		if (base_properties.has(member.name)) {
+			report(member.span, "M2031", vformat("Member '%s' conflicts with a native property of base class '%s'.", String(member.name), String(p_program.base_type)));
+		}
 		if (members.has(member.name)) {
 			report(member.span, "M2020", vformat("Member '%s' is already declared.", String(member.name)));
 		} else {

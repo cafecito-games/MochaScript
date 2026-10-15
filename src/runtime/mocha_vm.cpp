@@ -61,6 +61,22 @@ Variant runtime_default(const TypeRef &p_type) {
 	}
 }
 
+Variant::Type variant_type_for(const TypeRef &p_type) {
+	switch (p_type.kind) {
+		case TypeKind::BOOL: return Variant::BOOL;
+		case TypeKind::INT: return Variant::INT;
+		case TypeKind::FLOAT: return Variant::FLOAT;
+		case TypeKind::STRING: return Variant::STRING;
+		case TypeKind::ARRAY: return Variant::ARRAY;
+		case TypeKind::DICTIONARY: return Variant::DICTIONARY;
+		case TypeKind::OBJECT: return Variant::OBJECT;
+		case TypeKind::ANY:
+		case TypeKind::NIL:
+		case TypeKind::VOID: return Variant::NIL;
+	}
+	return Variant::NIL;
+}
+
 struct NestedFailureCapture {
 	RuntimeFailure failure;
 	uint64_t owner_id = 0;
@@ -238,7 +254,7 @@ bool MochaVM::variant_operator(MochaTokenizer::Token::Type p_operation, Variant:
 Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction &p_function,
 		Object *p_owner, Vector<Variant> &r_members, const Variant **p_arguments,
 		int p_argument_count, GDExtensionCallError &r_call_error,
-		RuntimeFailure &r_failure, const SourceSpan &p_entry_span) {
+		RuntimeFailure &r_failure, const SourceSpan &p_entry_span, bool p_external_entry) {
 	r_call_error = {};
 	r_call_error.error = GDEXTENSION_CALL_OK;
 	const uint64_t owner_id = p_owner != nullptr ? p_owner->get_instance_id() : 0;
@@ -270,6 +286,8 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 		if (!convert_value(*p_arguments[index], p_function.parameter_types[size_t(index)], converted)) {
 			r_call_error.error = GDEXTENSION_CALL_ERROR_INVALID_ARGUMENT;
 			r_call_error.argument = index;
+			r_call_error.expected = int32_t(variant_type_for(p_function.parameter_types[size_t(index)]));
+			r_failure.preserve_call_error = p_external_entry;
 			fail(r_failure, p_entry_span, vformat("Argument %d to '%s' has the wrong type.", index + 1, String(p_function.name)));
 			return {};
 		}
@@ -503,7 +521,7 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 							result = "MochaScript/bootstrap-1";
 						}
 					} else if (const CompiledFunction *callee = p_module.find_function(instruction.name)) {
-						result = execute(p_module, *callee, p_owner, r_members, pointers.data(), int(pointers.size()), nested_error, r_failure, instruction.span);
+						result = execute(p_module, *callee, p_owner, r_members, pointers.data(), int(pointers.size()), nested_error, r_failure, instruction.span, false);
 					} else {
 						NestedFailureCapture capture(receiver_id, instruction.name);
 						receiver.callp(instruction.name, pointers.data(), int(pointers.size()), result, nested_error);
@@ -568,7 +586,7 @@ Error MochaVM::initialize(const CompiledModule &p_module, Object *p_owner,
 	GDExtensionCallError error;
 	error.error = GDEXTENSION_CALL_OK;
 	VMEntry entry;
-	execute(p_module, p_module.initializer, p_owner, r_members, nullptr, 0, error, r_failure, p_module.initializer.span);
+	execute(p_module, p_module.initializer, p_owner, r_members, nullptr, 0, error, r_failure, p_module.initializer.span, false);
 	return error.error == GDEXTENSION_CALL_OK && r_failure.message.is_empty() ? OK : ERR_SCRIPT_FAILED;
 }
 
@@ -578,8 +596,8 @@ Variant MochaVM::call(const CompiledModule &p_module, const CompiledFunction &p_
 		RuntimeFailure &r_failure) {
 	r_failure = {};
 	VMEntry entry;
-	Variant result = execute(p_module, p_function, p_owner, r_members, p_arguments, p_argument_count, r_call_error, r_failure, p_function.span);
-	if (!r_failure.message.is_empty()) {
+	Variant result = execute(p_module, p_function, p_owner, r_members, p_arguments, p_argument_count, r_call_error, r_failure, p_function.span, true);
+	if (!r_failure.message.is_empty() && !r_failure.preserve_call_error) {
 		// Internal script failures are already reported with their Mocha location.
 		// Returning an argument error here is unsafe when there is no corresponding
 		// external argument for Godot's formatter to inspect.

@@ -176,21 +176,23 @@ TypeRef MochaParser::parse_type() {
 	else if (name == "Array") result = TypeRef::make(TypeKind::ARRAY, name);
 	else if (name == "Dictionary") result = TypeRef::make(TypeKind::DICTIONARY, name);
 	else result = TypeRef::make(TypeKind::OBJECT, name);
+	result.span = span_from_token(token);
 
-	// Collection parameters are parsed so their syntax has a stable boundary. The
-	// bootstrap TypeRef deliberately erases them until element checking is added.
+	// Collection parameters remain part of the frontend type so invalid names and
+	// forbidden `void` uses cannot become accidentally accepted source. Runtime
+	// storage still deliberately erases these parameters in the bootstrap.
 	if (match(Token::BRACKET_OPEN)) {
 		const Token bracket = previous();
 		if (name != "Array" && name != "Dictionary") {
 			error_at(bracket, "M1012", vformat("Type '%s' does not accept element parameters.", name));
 		}
-		parse_type();
+		result.parameters.push_back(parse_type());
 		if (name == "Dictionary") {
 			consume(Token::COMMA, "Expected ',' between Dictionary key and value types.");
-			parse_type();
+			result.parameters.push_back(parse_type());
 		} else if (match(Token::COMMA)) {
 			error_at(previous(), "M1012", "Array accepts exactly one element type.");
-			parse_type();
+			result.parameters.push_back(parse_type());
 		}
 		consume(Token::BRACKET_CLOSE, "Expected ']' after the collection element type.");
 	}
@@ -378,6 +380,12 @@ StmtPtr MochaParser::parse_statement() {
 		consume_line_end();
 		return result;
 	}
+	if (is_unsupported_assignment(peek().type)) {
+		const Token operation = advance();
+		error_at(operation, "M1090", vformat("Compound assignment '%s' is recognized but not supported by this MochaScript bootstrap.", token_text(operation)));
+		synchronize_line();
+		return {};
+	}
 	auto result = statement(StatementKind::EXPRESSION, first->span);
 	result->expression = first;
 	consume_line_end();
@@ -416,6 +424,12 @@ int MochaParser::binary_precedence(Token::Type p_type) const {
 bool MochaParser::is_assignment(Token::Type p_type) const {
 	return p_type == Token::EQUAL || p_type == Token::PLUS_EQUAL || p_type == Token::MINUS_EQUAL ||
 			p_type == Token::STAR_EQUAL || p_type == Token::SLASH_EQUAL || p_type == Token::PERCENT_EQUAL;
+}
+
+bool MochaParser::is_unsupported_assignment(Token::Type p_type) const {
+	return p_type == Token::STAR_STAR_EQUAL || p_type == Token::LESS_LESS_EQUAL ||
+			p_type == Token::GREATER_GREATER_EQUAL || p_type == Token::AMPERSAND_EQUAL ||
+			p_type == Token::PIPE_EQUAL || p_type == Token::CARET_EQUAL;
 }
 
 ExprPtr MochaParser::parse_expression(int p_min_precedence) {

@@ -45,6 +45,10 @@ enum class TypeKind {
 struct TypeRef {
 	TypeKind kind = TypeKind::ANY;
 	StringName name;
+	SourceSpan span;
+	// Collection parameters are retained for validation and future language
+	// evolution even though the bootstrap runtime currently erases them.
+	std::vector<TypeRef> parameters;
 
 	static TypeRef any() { return {}; }
 	static TypeRef make(TypeKind p_kind, const StringName &p_name = {}) {
@@ -53,7 +57,9 @@ struct TypeRef {
 		type.name = p_name;
 		return type;
 	}
-	bool operator==(const TypeRef &p_other) const { return kind == p_other.kind && name == p_other.name; }
+	bool operator==(const TypeRef &p_other) const {
+		return kind == p_other.kind && name == p_other.name && parameters == p_other.parameters;
+	}
 	bool operator!=(const TypeRef &p_other) const { return !(*this == p_other); }
 };
 

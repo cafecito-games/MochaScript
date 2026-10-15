@@ -244,6 +244,9 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			"\treturn value % 3\n"
 			"func omitted_return_type():\n"
 			"\treturn 7\n"
+			"func exceed_operation_budget() -> void:\n"
+			"\twhile touched < 200000:\n"
+			"\t\ttouched += 1\n"
 			"func recurse() -> int:\n"
 			"\treturn recurse()\n";
 	Program program;
@@ -370,13 +373,24 @@ godot::PackedStringArray MochaNativeTests::run() const {
 					result = invoke("omitted_return_type", {}, call_error, failure);
 					if (call_error.error != GDEXTENSION_CALL_OK || result != godot::Variant(int64_t(7))) failures.push_back("analyzer: omitted return type was not Variant");
 					invoke("add", { godot::String("wrong") }, call_error, failure);
-					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty() || failure.span.line < 1 || failure.span.column < 1) failures.push_back("vm: wrong external argument lacked a source-located runtime failure");
+					if (call_error.error != GDEXTENSION_CALL_ERROR_INVALID_ARGUMENT || call_error.argument != 0 ||
+							call_error.expected != GDEXTENSION_VARIANT_TYPE_INT || failure.code != "M4001" ||
+							failure.span.line < 1 || failure.span.column < 1) {
+						failures.push_back("vm: wrong external argument did not preserve its typed Godot call error and Mocha location");
+					}
 					invoke("forward_wrong", { godot::String("wrong") }, call_error, failure);
 					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty() || failure.span.line < 1 || failure.span.column < 1) failures.push_back("vm: nested wrong argument lacked its call-site span");
 					invoke("dynamic_store", {}, call_error, failure);
 					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty()) failures.push_back("vm: dynamic store failure exposed an unsafe Godot call error");
 					invoke("missing", { false }, call_error, failure);
 					if (call_error.error != GDEXTENSION_CALL_OK || failure.message.is_empty()) failures.push_back("vm: typed fallthrough was not reported as a handled runtime failure");
+					invoke("exceed_operation_budget", {}, call_error, failure);
+					const int64_t touched_after_budget = members[module->find_member("touched")];
+					if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
+							!failure.message.contains("one million") || failure.span.line < 1 ||
+							touched_after_budget <= 0 || touched_after_budget >= 200000) {
+						failures.push_back("vm: operation budget lacked its deterministic failure or mutation semantics");
+					}
 					invoke("recurse", {}, call_error, failure);
 					if (call_error.error != GDEXTENSION_CALL_OK || !failure.message.contains("depth") || failure.span.line < 1 || failure.span.column < 1) failures.push_back("vm: recursion limit lacked a source-located runtime failure");
 				}
@@ -427,6 +441,11 @@ godot::PackedStringArray MochaNativeTests::run() const {
 		MochaParser parser;
 		if (parser.parse(collection_types, "res://native_collection_types.mocha", valid) != godot::OK) {
 			failures.push_back("parser: valid erased collection element syntax was rejected");
+		} else {
+			MochaAnalyzer analyzer;
+			if (analyzer.analyze(valid, "res://native_collection_types.mocha") != godot::OK) {
+				failures.push_back("analyzer: valid erased collection element types were rejected");
+			}
 		}
 
 		Program invalid;
@@ -434,6 +453,46 @@ godot::PackedStringArray MochaNativeTests::run() const {
 		if (invalid_parser.parse("var value: int[String]\n", "res://native_noncollection_type.mocha", invalid) != godot::ERR_PARSE_ERROR ||
 				invalid_parser.get_diagnostics().empty() || invalid_parser.get_diagnostics()[0].code != "M1012") {
 			failures.push_back("parser: non-collection element syntax did not produce M1012");
+		}
+	}
+
+	{
+		struct InvalidElementTypeCase { const char *source; const char *code; const char *label; };
+		const InvalidElementTypeCase cases[] = {
+			{ "var values: Array[void]\n", "M2026", "void Array element" },
+			{ "var values: Dictionary[String, DefinitelyNotAClass]\n", "M2024", "unknown Dictionary value" },
+		};
+		for (const InvalidElementTypeCase &test_case : cases) {
+			Program invalid;
+			MochaParser parser;
+			if (parser.parse(test_case.source, "res://native_invalid_element_type.mocha", invalid) != godot::OK) {
+				failures.push_back(godot::String("parser: ") + test_case.label + " failed before analysis");
+				continue;
+			}
+			MochaAnalyzer analyzer;
+			if (analyzer.analyze(invalid, "res://native_invalid_element_type.mocha") != godot::ERR_COMPILATION_FAILED) {
+				failures.push_back(godot::String("analyzer: ") + test_case.label + " was accepted");
+				continue;
+			}
+			bool found = false;
+			for (const Diagnostic &diagnostic : analyzer.get_diagnostics()) found |= diagnostic.code == test_case.code;
+			if (!found) failures.push_back(godot::String("analyzer: ") + test_case.label + " did not produce " + test_case.code);
+		}
+	}
+
+	{
+		for (const godot::String &operation : { godot::String("**="), godot::String("<<="), godot::String(">>="),
+				godot::String("&="), godot::String("|="), godot::String("^=") }) {
+			Program invalid;
+			MochaParser parser;
+			const godot::String source = "func bad() -> void:\n\tvar value: int = 1\n\tvalue " + operation + " 2\n";
+			if (parser.parse(source, "res://native_unsupported_compound.mocha", invalid) != godot::ERR_PARSE_ERROR) {
+				failures.push_back("parser: unsupported compound assignment was accepted: " + operation);
+				continue;
+			}
+			bool found = false;
+			for (const Diagnostic &diagnostic : parser.get_diagnostics()) found |= diagnostic.code == "M1090";
+			if (!found) failures.push_back("parser: unsupported compound assignment lacked M1090: " + operation);
 		}
 	}
 
@@ -471,6 +530,20 @@ godot::PackedStringArray MochaNativeTests::run() const {
 		if (parser.parse("func bad(PI: float) -> float:\n\treturn PI\n", "res://native_reserved_constant.mocha", invalid) != godot::ERR_PARSE_ERROR ||
 				parser.get_diagnostics().empty() || parser.get_diagnostics()[0].code != "M1013") {
 			failures.push_back("parser: built-in constant declaration did not produce M1013");
+		}
+	}
+
+	{
+		Program invalid;
+		MochaParser invalid_parser;
+		invalid_parser.parse("extends Node\nvar name: String\n", "res://native_property_collision.mocha", invalid);
+		MochaAnalyzer analyzer;
+		if (analyzer.analyze(invalid, "res://native_property_collision.mocha") != godot::ERR_COMPILATION_FAILED) {
+			failures.push_back("analyzer: native base property collision was accepted");
+		} else {
+			bool found = false;
+			for (const Diagnostic &diagnostic : analyzer.get_diagnostics()) found |= diagnostic.code == "M2031";
+			if (!found) failures.push_back("analyzer: native base property collision did not produce M2031");
 		}
 	}
 
