@@ -145,27 +145,35 @@ void *MochaScript::_placeholder_instance_create(godot::Object *p_for_object) con
 bool MochaScript::_has_source_code() const { return true; }
 godot::String MochaScript::_get_source_code() const { return source_code; }
 void MochaScript::_set_source_code(const godot::String &p_code) {
-	std::lock_guard<std::mutex> lock(instances_mutex);
-	if (p_code == source_code) return;
-	if (!instances.is_empty() && p_code != source_code) {
+	bool reload_path_backed_resource = false;
+	{
+		std::lock_guard<std::mutex> lock(instances_mutex);
+		if (p_code == source_code) return;
+		if (!instances.is_empty()) {
+			diagnostics.clear();
+			godot::Dictionary diagnostic;
+			diagnostic["code"] = "M0003";
+			diagnostic["message"] = "Source replacement is refused while a MochaScript instance is alive.";
+			diagnostic["path"] = get_path().is_empty() ? godot::String("<memory>") : get_path();
+			diagnostic["line"] = 1;
+			diagnostic["column"] = 1;
+			diagnostic["end_line"] = 1;
+			diagnostic["end_column"] = 1;
+			diagnostics.push_back(diagnostic);
+			return;
+		}
+		source_code = p_code;
+		valid = false;
+		token_count = 0;
 		diagnostics.clear();
-		godot::Dictionary diagnostic;
-		diagnostic["code"] = "M0003";
-		diagnostic["message"] = "Source replacement is refused while a MochaScript instance is alive.";
-		diagnostic["path"] = get_path().is_empty() ? godot::String("<memory>") : get_path();
-		diagnostic["line"] = 1;
-		diagnostic["column"] = 1;
-		diagnostic["end_line"] = 1;
-		diagnostic["end_column"] = 1;
-		diagnostics.push_back(diagnostic);
-		return;
+		program.reset();
+		compiled_module.reset();
+		reload_path_backed_resource = !get_path().is_empty();
 	}
-	source_code = p_code;
-	valid = false;
-	token_count = 0;
-	diagnostics.clear();
-	program.reset();
-	compiled_module.reset();
+	// Path-backed resources must stay executable when their source is replaced,
+	// including when ResourceLoader updates a cached MochaScript. New in-memory
+	// resources retain the explicit reload contract.
+	if (reload_path_backed_resource) _reload(false);
 }
 
 godot::Error MochaScript::_reload(bool) {

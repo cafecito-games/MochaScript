@@ -1,6 +1,15 @@
 extends SceneTree
 
 
+func _write_script(path: String, value: int) -> bool:
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		return false
+	file.store_string("extends RefCounted\nfunc value() -> int:\n\treturn %d\n" % value)
+	file.close()
+	return true
+
+
 func _initialize() -> void:
 	var failures: Array[String] = []
 	var recognized := ResourceLoader.get_recognized_extensions_for_type("MochaScript")
@@ -22,12 +31,22 @@ func _initialize() -> void:
 		if not script.can_instantiate():
 			failures.append("compiled MochaScript unexpectedly cannot instantiate")
 
-	var ignored := ResourceLoader.load("res://example.mocha", "", ResourceLoader.CACHE_MODE_IGNORE) as MochaScript
-	if ignored == null or not ignored.is_compilation_valid():
-		failures.append("CACHE_MODE_IGNORE did not produce a valid independent MochaScript")
-	var replaced := ResourceLoader.load("res://example.mocha", "", ResourceLoader.CACHE_MODE_REPLACE) as MochaScript
-	if replaced == null or not replaced.is_compilation_valid():
-		failures.append("CACHE_MODE_REPLACE did not produce a valid MochaScript")
+	var cache_path := "user://mocha_cache_replace_test.mocha"
+	if not _write_script(cache_path, 1):
+		failures.append("could not write the cache-mode fixture")
+	else:
+		var cached := ResourceLoader.load(cache_path) as MochaScript
+		if cached == null or not cached.is_compilation_valid():
+			failures.append("initial cache-mode fixture did not compile")
+		elif not _write_script(cache_path, 2):
+			failures.append("could not replace the cache-mode fixture")
+		else:
+			var ignored := ResourceLoader.load(cache_path, "", ResourceLoader.CACHE_MODE_IGNORE) as MochaScript
+			if ignored == null or ignored == cached or not ignored.get_source_code().contains("return 2") or not ignored.is_compilation_valid():
+				failures.append("CACHE_MODE_IGNORE did not return a valid independent updated script")
+			var replaced := ResourceLoader.load(cache_path, "", ResourceLoader.CACHE_MODE_REPLACE) as MochaScript
+			if replaced != cached or not replaced.get_source_code().contains("return 2") or not replaced.is_compilation_valid():
+				failures.append("CACHE_MODE_REPLACE did not update and recompile the cached script: same=%s source=%s valid=%s diagnostics=%s" % [replaced == cached, replaced.get_source_code() if replaced else "<null>", replaced.is_compilation_valid() if replaced else false, replaced.get_diagnostics() if replaced else []])
 
 	if failures.is_empty():
 		print("MOCHA_RECOGNITION_OK")

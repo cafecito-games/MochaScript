@@ -10,6 +10,7 @@
 #include "mocha_script.h"
 
 #include <godot_cpp/classes/file_access.hpp>
+#include <godot_cpp/classes/resource_loader.hpp>
 
 namespace mocha_script {
 
@@ -48,7 +49,7 @@ godot::Error MochaScriptResourceLoader::_rename_dependencies(const godot::String
 bool MochaScriptResourceLoader::_exists(const godot::String &p_path) const { return godot::FileAccess::file_exists(p_path); }
 godot::PackedStringArray MochaScriptResourceLoader::_get_classes_used(const godot::String &) const { return {}; }
 
-godot::Variant MochaScriptResourceLoader::_load(const godot::String &p_path, const godot::String &p_original_path, bool, int32_t) const {
+godot::Variant MochaScriptResourceLoader::_load(const godot::String &p_path, const godot::String &p_original_path, bool, int32_t p_cache_mode) const {
 	godot::Ref<godot::FileAccess> file = godot::FileAccess::open(p_path, godot::FileAccess::READ);
 	if (file.is_null()) {
 		return godot::FileAccess::get_open_error();
@@ -60,10 +61,23 @@ godot::Variant MochaScriptResourceLoader::_load(const godot::String &p_path, con
 		return read_error;
 	}
 
+	const godot::String resource_path = p_original_path.is_empty() ? p_path : p_original_path;
+	const bool replacing = p_cache_mode == godot::ResourceLoader::CACHE_MODE_REPLACE ||
+			p_cache_mode == godot::ResourceLoader::CACHE_MODE_REPLACE_DEEP;
+	if (replacing) {
+		godot::Ref<godot::Resource> cached_resource = godot::ResourceLoader::get_singleton()->get_cached_ref(resource_path);
+		godot::Ref<MochaScript> cached_script(cached_resource);
+		if (cached_script.is_valid()) {
+			cached_script->set_diagnostic_path_for_validation(resource_path);
+			cached_script->_set_source_code(source);
+			return cached_script;
+		}
+	}
+
 	godot::Ref<MochaScript> script;
 	script.instantiate();
 	script->_set_source_code(source);
-	script->set_diagnostic_path_for_validation(p_original_path.is_empty() ? p_path : p_original_path);
+	script->set_diagnostic_path_for_validation(resource_path);
 	// Invalid source remains inspectable as a Script resource. The error and its
 	// stable diagnostics are exposed by MochaScript rather than being replaced by
 	// a loader-level integer that loses source positions.
