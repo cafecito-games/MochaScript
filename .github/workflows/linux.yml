@@ -9,7 +9,6 @@ permissions:
 
 jobs:
   verify:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -37,10 +36,15 @@ jobs:
         shell: bash
         env:
           CUSTOM_GODOT_READ_TOKEN: ${{ secrets.CUSTOM_GODOT_READ_TOKEN }}
+          IS_FORK_PULL_REQUEST: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
         run: |
           set -euo pipefail
           if [[ -z "$CUSTOM_GODOT_READ_TOKEN" ]]; then
-            echo "CUSTOM_GODOT_READ_TOKEN must be a read-only token for cafecito-games/custom-godot." >&2
+            if [[ "$IS_FORK_PULL_REQUEST" == "true" ]]; then
+              echo "Fork pull requests cannot access the private custom-Godot artifact; a maintainer must run this commit from a branch in cafecito-games/MochaScript." >&2
+            else
+              echo "CUSTOM_GODOT_READ_TOKEN must be configured as a read-only token for cafecito-games/custom-godot." >&2
+            fi
             exit 1
           fi
           readarray -t godot_pin < <(python - <<'PY'
