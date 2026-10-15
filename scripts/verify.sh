@@ -91,4 +91,7 @@ if grep -Eiq 'SCRIPT ERROR|ERROR:|crash|segmentation fault' "$editor_log" "$reco
     exit 1
 fi
 
+rm -f -- "$editor_log" "$recognition_log" "$tokenizer_log" "$frontend_log" \
+    "$execution_log" "$native_log" "$bootstrap_corpus_log"
+rmdir -- "$log_dir"
 echo "MOCHA_VERIFY_OK"
