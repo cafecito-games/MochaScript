@@ -7,6 +7,11 @@ snapshot is Cafecito custom Godot release `v4.7.2-20260903.1`, outer commit
 SHA-256 `b61fb6208257c8d694463404d93d0b4d39e4d11a772babf012150bd57411d41b`; the Linux editor archive
 and extracted executable are independently pinned in the lock.
 
+The original private custom-Godot release repository, asset ID, and archive hash remain the source
+provenance. CI downloads a separately pinned same-repository mirror archive whose extracted editor
+has that same executable hash. This lets GitHub Actions use its built-in read-only repository token
+without copying a long-lived cross-repository credential into MochaScript.
+
 The initial tokenizer files retain Godot's MIT notice. `provenance/source_imports.json` records each
 component's baseline commit and transformation version plus every source path, source hash,
 destination, and initial transformed hash. Later staged imports can therefore retain a different

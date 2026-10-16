@@ -26,32 +26,24 @@ jobs:
       - name: Download pinned Cafecito Godot editor
         shell: bash
         env:
-          CUSTOM_GODOT_READ_TOKEN: ${{ secrets.CUSTOM_GODOT_READ_TOKEN }}
-          IS_FORK_PULL_REQUEST: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+          CI_RUNTIME_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if [[ -z "$CUSTOM_GODOT_READ_TOKEN" ]]; then
-            if [[ "$IS_FORK_PULL_REQUEST" == "true" ]]; then
-              echo "Fork pull requests cannot access the private custom-Godot artifact; a maintainer must run this commit from a branch in cafecito-games/MochaScript." >&2
-            else
-              echo "CUSTOM_GODOT_READ_TOKEN must be configured as a read-only token for cafecito-games/custom-godot." >&2
-            fi
-            exit 1
-          fi
           readarray -t godot_pin < <(python - <<'PY'
           import json
           with open("upstream.lock.json", encoding="utf-8") as stream:
               runtime = json.load(stream)["installed_runtime"]
-          print(runtime["repository"])
-          print(runtime["linux_editor_release_asset_id"])
-          print(runtime["linux_editor_sha256"])
+          mirror = runtime["ci_mirror"]
+          print(mirror["repository"])
+          print(mirror["linux_editor_release_asset_id"])
+          print(mirror["linux_editor_sha256"])
           print(runtime["linux_editor_binary_sha256"])
           PY
           )
           godot_asset_api="https://api.github.com/repos/${godot_pin[0]}/releases/assets/${godot_pin[1]}"
           mkdir -p .ci/bin
           curl --fail --location --silent --show-error \
-            --header "Authorization: Bearer $CUSTOM_GODOT_READ_TOKEN" \
+            --header "Authorization: Bearer $CI_RUNTIME_TOKEN" \
             --header "Accept: application/octet-stream" \
             "$godot_asset_api" --output .ci/godot.tar.gz
           echo "${godot_pin[2]}  .ci/godot.tar.gz" | sha256sum --check --strict

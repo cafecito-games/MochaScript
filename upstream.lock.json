@@ -43,7 +43,13 @@
     "precision": "single",
     "linux_editor_release_asset_id": 542713790,
     "linux_editor_sha256": "a9d5fb1a2998874cfc0da9100e690d3b76e46390fcf4da31585a70000a1e8ad6",
-    "linux_editor_binary_sha256": "de80b383661a10ef263ef30aef9f9de89114f6f4d14e6e1b350779f7aaa912e3"
+    "linux_editor_binary_sha256": "de80b383661a10ef263ef30aef9f9de89114f6f4d14e6e1b350779f7aaa912e3",
+    "ci_mirror": {
+      "repository": "cafecito-games/MochaScript",
+      "release": "mochascript-ci-runtime-v4.7.2-20260903.1",
+      "linux_editor_release_asset_id": 645702713,
+      "linux_editor_sha256": "5af3199d4aeb2f58c8d5ce27314a759ae480d55eeefb3ffd84c0321ba6499894"
+    }
   },
   "godot_cpp_template": {
     "repository": "https://github.com/godotengine/godot-cpp-template.git",

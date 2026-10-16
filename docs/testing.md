@@ -40,11 +40,12 @@ placeholder test. Each verifier invocation gets isolated XDG data, config, and c
 its log directory, so fixed `user://` fixtures cannot collide across worktrees. Logs are written
 under the user's cache rather than the repository.
 
-Linux CI reads the private release repository, immutable asset ID, archive SHA-256, and extracted
-binary SHA-256 from `upstream.lock.json`, then verifies both archive and executable before use.
-Local verification hashes the resolved `godot` executable against the same binary pin. Configure
-`CUSTOM_GODOT_READ_TOKEN` as a read-only Actions secret. No credential or mutable latest-release URL
-is embedded in the repository.
+Linux CI reads an immutable same-repository mirror asset ID, archive SHA-256, and extracted binary
+SHA-256 from `upstream.lock.json`, then verifies both archive and executable before use. The mirror
+contains the exact executable pinned from the private custom-Godot release, but is packaged as a
+MochaScript release asset so Actions can fetch it with the job's built-in, read-only token. Local
+verification hashes the resolved `godot` executable against the same binary pin. No custom secret,
+personal credential, or mutable latest-release URL is required or embedded in the repository.
 
 Godot resource identities are repository state. Every tracked `.gd`, `.mocha`, and `.gdextension`
 file under `project/` must have its generated `.uid` sidecar committed. The canonical verifier fails
