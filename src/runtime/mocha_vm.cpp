@@ -113,9 +113,19 @@ enum class ForwardedDispatchResult {
 	LIMIT_EXCEEDED,
 };
 
+bool live_script_instance_has_method(Object *p_object, Script *p_script, const StringName &p_method) {
+	if (p_object == nullptr || p_script == nullptr || !p_script->instance_has(p_object)) return false;
+	Ref<Script> script = p_script;
+	while (script.is_valid()) {
+		if (script->has_script_method(p_method)) return true;
+		script = script->get_base_script();
+	}
+	return false;
+}
+
 ForwardedDispatchResult resolve_forwarded_dispatch(const StringName &p_method,
 		const std::vector<Variant> &p_arguments, const Array &p_array_arguments,
-		bool p_use_array_arguments, Script *p_receiver_script,
+		bool p_use_array_arguments, Object *p_receiver_object, Script *p_receiver_script,
 		std::vector<StringName> &r_methods) {
 	const VMNames &names = vm_names();
 	StringName method = p_method;
@@ -130,7 +140,7 @@ ForwardedDispatchResult resolve_forwarded_dispatch(const StringName &p_method,
 		return using_array_arguments ? array_arguments[int64_t(array_argument_offset + p_index)] : p_arguments[argument_offset + p_index];
 	};
 	for (int depth = 0; depth < 128; ++depth) {
-		if (p_receiver_script != nullptr && p_receiver_script->has_script_method(method)) {
+		if (live_script_instance_has_method(p_receiver_object, p_receiver_script, method)) {
 			return ForwardedDispatchResult::RESOLVED;
 		}
 		if (method == names.call) {
@@ -172,7 +182,7 @@ ForwardedDispatchResult resolve_forwarded_dispatch(const StringName &p_method,
 		if (method.is_empty()) return ForwardedDispatchResult::INVALID;
 		r_methods.push_back(method);
 	}
-	if (p_receiver_script != nullptr && p_receiver_script->has_script_method(method)) {
+	if (live_script_instance_has_method(p_receiver_object, p_receiver_script, method)) {
 		return ForwardedDispatchResult::RESOLVED;
 	}
 	return method == names.call || method == names.callv
@@ -676,7 +686,8 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 							if (arguments_available) {
 								forwarding_limit_exceeded = resolve_forwarded_dispatch(expected_method,
 										values, callable_array_arguments, use_callable_array_arguments,
-										receiver_script, expected_methods) == ForwardedDispatchResult::LIMIT_EXCEEDED;
+										validated_receiver_object, receiver_script,
+										expected_methods) == ForwardedDispatchResult::LIMIT_EXCEEDED;
 							}
 						}
 					} else {
@@ -691,7 +702,7 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 							(instruction.name == names.call || instruction.name == names.callv)) {
 						const Array no_array_arguments;
 						forwarding_limit_exceeded = resolve_forwarded_dispatch(instruction.name,
-								values, no_array_arguments, false, receiver_script,
+								values, no_array_arguments, false, validated_receiver_object, receiver_script,
 								expected_methods) == ForwardedDispatchResult::LIMIT_EXCEEDED;
 					}
 				}
