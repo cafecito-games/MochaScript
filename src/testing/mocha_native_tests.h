@@ -13,8 +13,11 @@
 
 namespace mocha_script {
 
+class MochaScript;
+
 class MochaNativeTests final : public godot::RefCounted {
 	GDCLASS(MochaNativeTests, godot::RefCounted)
+	mutable bool deferred_instance_observed = false;
 
 protected:
 	static void _bind_methods();
@@ -24,7 +27,7 @@ protected:
 	bool initializer_mismatch_probe() const;
 	bool opaque_callable_probe() const;
 	bool opaque_bound_callable_probe(const godot::Variant &p_value) const;
-	void delete_node_for_test(godot::Node *p_node) const;
+	void delete_node_for_test(godot::Node *p_node, MochaScript *p_script) const;
 	int64_t get_shielded_value() const;
 
 public:
