@@ -407,7 +407,9 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			"func call_freed(target: Variant) -> Variant:\n"
 			"\treturn target.call(\"get_class\")\n"
 			"func callv_freed(target: Variant) -> Variant:\n"
-			"\treturn target.callv(\"get_class\", [])\n";
+			"\treturn target.callv(\"get_class\", [])\n"
+			"func object_override_boundary(target: Variant, arguments: Variant) -> Variant:\n"
+			"\treturn target.callv(\"call\", arguments)\n";
 	Program program;
 	MochaParser parser;
 	if (parser.parse(executable, "res://native_pipeline.mocha", program) != godot::OK) {
@@ -788,6 +790,38 @@ godot::PackedStringArray MochaNativeTests::run() const {
 										failure.path != "res://native_callv_override.mocha" || !failure_at(failure, 4, 9) ||
 										!called_at(failure, "res://native_pipeline.mocha", 164, 9)) {
 									failures.push_back("vm: intermediate Callable target override was mistaken for native forwarding");
+								}
+								godot::Array callable_override_boundary_arguments;
+								for (int depth = 0; depth < 127; ++depth) callable_override_boundary_arguments.push_back("call");
+								callable_override_boundary_arguments.push_back("callv");
+								callable_override_boundary_arguments.push_back("ignored");
+								callable_override_boundary_arguments.push_back(godot::Array());
+								const godot::Variant callable_boundary_value = callable_override_boundary_arguments;
+								const godot::Variant *callable_boundary_arguments[2] = {
+									&override_call_callable, &callable_boundary_value
+								};
+								MochaVM::call(*module, *module->find_function("callable_dynamic_callv"), nested_owner.ptr(), nested_members,
+										callable_boundary_arguments, 2, call_error, failure);
+								if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
+										failure.path != "res://native_callv_override.mocha" || !failure_at(failure, 4, 9) ||
+										!called_at(failure, "res://native_pipeline.mocha", 156, 9)) {
+									failures.push_back("vm: Callable forwarding boundary rejected its terminal script override");
+								}
+								godot::Array object_override_boundary_arguments;
+								for (int depth = 0; depth < 126; ++depth) object_override_boundary_arguments.push_back("call");
+								object_override_boundary_arguments.push_back("callv");
+								object_override_boundary_arguments.push_back("ignored");
+								object_override_boundary_arguments.push_back(godot::Array());
+								const godot::Variant object_boundary_value = object_override_boundary_arguments;
+								const godot::Variant *object_boundary_arguments[2] = {
+									&override_owner_value, &object_boundary_value
+								};
+								MochaVM::call(*module, *module->find_function("object_override_boundary"), nested_owner.ptr(), nested_members,
+										object_boundary_arguments, 2, call_error, failure);
+								if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
+										failure.path != "res://native_callv_override.mocha" || !failure_at(failure, 4, 9) ||
+										!called_at(failure, "res://native_pipeline.mocha", 170, 9)) {
+									failures.push_back("vm: Object forwarding boundary rejected its terminal script override");
 								}
 								callv_override_owner->set_script(godot::Variant());
 							}

@@ -172,6 +172,9 @@ ForwardedDispatchResult resolve_forwarded_dispatch(const StringName &p_method,
 		if (method.is_empty()) return ForwardedDispatchResult::INVALID;
 		r_methods.push_back(method);
 	}
+	if (p_receiver_script != nullptr && p_receiver_script->has_script_method(method)) {
+		return ForwardedDispatchResult::RESOLVED;
+	}
 	return method == names.call || method == names.callv
 			? ForwardedDispatchResult::LIMIT_EXCEEDED
 			: ForwardedDispatchResult::RESOLVED;
