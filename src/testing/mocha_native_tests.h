@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
 
@@ -23,6 +24,7 @@ protected:
 	bool initializer_mismatch_probe() const;
 	bool opaque_callable_probe() const;
 	bool opaque_bound_callable_probe(const godot::Variant &p_value) const;
+	void delete_node_for_test(godot::Node *p_node) const;
 	int64_t get_shielded_value() const;
 
 public:

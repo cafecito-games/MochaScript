@@ -109,7 +109,10 @@ void *MochaScript::_instance_create(godot::Object *p_for_object) const {
 	std::unique_lock<std::mutex> lock(instances_mutex);
 	if (!_can_instantiate() || p_for_object == nullptr) return nullptr;
 	if (!compiled_module->base_type.is_empty() && !godot::ClassDB::is_parent_class(p_for_object->get_class(), compiled_module->base_type)) {
-		godot::UtilityFunctions::push_error(godot::vformat("Cannot attach %s to %s; MochaScript extends %s.", get_path(), p_for_object->get_class(), godot::String(compiled_module->base_type)));
+		const godot::String message = godot::vformat("Cannot attach %s to %s; MochaScript extends %s.",
+				get_path(), p_for_object->get_class(), godot::String(compiled_module->base_type));
+		lock.unlock();
+		godot::UtilityFunctions::push_error(message);
 		return nullptr;
 	}
 	const std::shared_ptr<CompiledModule> module = compiled_module;
