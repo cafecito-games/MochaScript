@@ -1,0 +1,69 @@
+/**************************************************************************/
+/*  mocha_vm.h                                                            */
+/**************************************************************************/
+/*  Copyright (c) 2026-present Cafecito Games LLC.                        */
+/*  SPDX-License-Identifier: MIT                                          */
+/**************************************************************************/
+
+#pragma once
+
+#include "runtime/mocha_bytecode.h"
+
+#include <godot_cpp/core/object.hpp>
+#include <godot_cpp/godot.hpp>
+
+namespace mocha_script {
+
+struct RuntimeFailure {
+	String code;
+	String message;
+	// Originating module and instruction.
+	String path;
+	SourceSpan span;
+	// First engine-mediated Mocha call that propagated this origin outward.
+	String call_path;
+	SourceSpan call_span;
+	bool preserve_call_error = false;
+};
+
+class MochaNestedFailureShield {
+public:
+	MochaNestedFailureShield();
+	~MochaNestedFailureShield();
+	MochaNestedFailureShield(const MochaNestedFailureShield &) = delete;
+	MochaNestedFailureShield &operator=(const MochaNestedFailureShield &) = delete;
+};
+
+class MochaVM {
+	static Variant execute(const CompiledModule &p_module, const CompiledFunction &p_function,
+			Object *p_owner, Vector<Variant> &r_members, const Variant **p_arguments,
+			int p_argument_count, GDExtensionCallError &r_call_error,
+			RuntimeFailure &r_failure, const SourceSpan &p_entry_span, bool p_external_entry);
+	static bool convert_value(const Variant &p_value, const TypeRef &p_type, Variant &r_converted);
+	static bool variant_operator(MochaTokenizer::Token::Type p_operation, Variant::Operator &r_operator);
+
+public:
+	static Error initialize(const CompiledModule &p_module, Object *p_owner,
+			Vector<Variant> &r_members, RuntimeFailure &r_failure);
+	static Variant call(const CompiledModule &p_module, const CompiledFunction &p_function,
+			Object *p_owner, Vector<Variant> &r_members, const Variant **p_arguments,
+			int p_argument_count, GDExtensionCallError &r_call_error,
+			RuntimeFailure &r_failure);
+	static bool accepts(const Variant &p_value, const TypeRef &p_type, Variant &r_converted) {
+		return convert_value(p_value, p_type, r_converted);
+	}
+	static String format_failure(const RuntimeFailure &p_failure, const String &p_fallback_path);
+	// A script instance reached through a host `callp` reports a nested VM failure
+	// here so the outer VM frame cannot mistake its nil result for success. Capture
+	// matches one receiver and expected dispatch, including Object.call/callv and
+	// Callable call/callv targets.
+	static bool publish_nested_failure(const RuntimeFailure &p_failure, uint64_t p_owner_id,
+			const StringName &p_method);
+#ifdef DEBUG_ENABLED
+	static bool test_failure_capture_match(uint64_t p_capture_owner, const StringName &p_expected_method,
+			const StringName &p_alternate_method, uint64_t p_publication_owner,
+			const StringName &p_publication_method);
+#endif
+};
+
+} // namespace mocha_script

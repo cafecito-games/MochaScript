@@ -1,0 +1,10 @@
+[configuration]
+
+entry_symbol = "mocha_script_library_init"
+compatibility_minimum = "4.7"
+reloadable = false
+
+[libraries]
+
+linux.x86_64.single.debug = "./linux/libmocha_script.linux.template_debug.x86_64.so"
+linux.x86_64.single.release = "./linux/libmocha_script.linux.template_release.x86_64.so"

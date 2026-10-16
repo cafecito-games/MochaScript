@@ -1,0 +1,21 @@
+# MochaScript executable vertical slice
+extends Node
+
+var total: int = 1
+
+func compute(input: int) -> int:
+	var values: Array = [input, 2]
+	var metadata: Dictionary = {"bonus": 3}
+	if values[0] > 0:
+		total = values[0] + values[1] + metadata["bonus"]
+	var host_name: String = get_name()
+	if host_name == "MochaHost":
+		total += 36
+	return total
+
+func language_version() -> String:
+	return mocha_language_version()
+
+func detach_self() -> int:
+	set_script(null)
+	return 1
