@@ -9,6 +9,7 @@
 
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/core/object_id.hpp>
+#include <godot_cpp/classes/script.hpp>
 #include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/callable.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
@@ -117,27 +118,32 @@ ForwardedDispatchResult resolve_forwarded_dispatch(const StringName &p_method,
 	const VMNames &names = vm_names();
 	StringName method = p_method;
 	std::vector<Variant> arguments = p_arguments;
+	size_t argument_offset = 0;
 	for (int depth = 0; depth < 128; ++depth) {
 		if (method == names.call) {
-			if (arguments.empty() || (arguments[0].get_type() != Variant::STRING &&
-					arguments[0].get_type() != Variant::STRING_NAME)) {
+			if (argument_offset >= arguments.size() ||
+					(arguments[argument_offset].get_type() != Variant::STRING &&
+							arguments[argument_offset].get_type() != Variant::STRING_NAME)) {
 				return ForwardedDispatchResult::INVALID;
 			}
-			method = StringName(arguments[0]);
-			arguments.erase(arguments.begin());
+			method = StringName(arguments[argument_offset++]);
 		} else if (method == names.callv) {
-			if (arguments.size() < 2 || (arguments[0].get_type() != Variant::STRING &&
-					arguments[0].get_type() != Variant::STRING_NAME) ||
-					(arguments[1].get_type() != Variant::NIL &&
-							!Variant::can_convert_strict(arguments[1].get_type(), Variant::ARRAY))) {
+			if (arguments.size() - argument_offset < 2 ||
+					(arguments[argument_offset].get_type() != Variant::STRING &&
+							arguments[argument_offset].get_type() != Variant::STRING_NAME) ||
+					(arguments[argument_offset + 1].get_type() != Variant::NIL &&
+							!Variant::can_convert_strict(arguments[argument_offset + 1].get_type(), Variant::ARRAY))) {
 				return ForwardedDispatchResult::INVALID;
 			}
-			method = StringName(arguments[0]);
-			const Array packed_arguments = arguments[1];
-			arguments.clear();
-			arguments.reserve(size_t(packed_arguments.size()));
-			for (int64_t index = 0; index < packed_arguments.size(); ++index) {
-				arguments.push_back(packed_arguments[index]);
+			method = StringName(arguments[argument_offset]);
+			if (method == names.call || method == names.callv) {
+				const Array packed_arguments = arguments[argument_offset + 1];
+				arguments.clear();
+				arguments.reserve(size_t(packed_arguments.size()));
+				for (int64_t index = 0; index < packed_arguments.size(); ++index) {
+					arguments.push_back(packed_arguments[index]);
+				}
+				argument_offset = 0;
 			}
 		} else {
 			return ForwardedDispatchResult::RESOLVED;
@@ -606,6 +612,21 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				bool capture_host_failure = true;
 				bool forwarding_limit_exceeded = false;
 				const VMNames &names = vm_names();
+				const CompiledFunction *local_callee = instruction.opcode == OpCode::CALL_SELF
+						? p_module.find_function(instruction.name)
+						: nullptr;
+				bool receiver_script_overrides_method = false;
+				if (local_callee == nullptr && receiver.get_type() == Variant::OBJECT &&
+						(instruction.name == names.call || instruction.name == names.callv)) {
+					Object *receiver_object = receiver;
+					if (receiver_object != nullptr) {
+						const Variant attached_script = receiver_object->get_script();
+						Script *script = attached_script.get_type() == Variant::OBJECT
+								? Object::cast_to<Script>(attached_script.get_validated_object())
+								: nullptr;
+						receiver_script_overrides_method = script != nullptr && script->has_script_method(instruction.name);
+					}
+				}
 				if (receiver.get_type() == Variant::CALLABLE &&
 						(instruction.name == names.call || instruction.name == names.callv)) {
 					const Callable callable = receiver;
@@ -613,21 +634,23 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 						receiver_id = uint64_t(callable.get_object_id());
 						expected_method = callable.get_method();
 						capture_host_failure = !expected_method.is_empty();
-						std::vector<Variant> forwarded_arguments;
-						if (instruction.name == names.call && !values.empty()) {
-							forwarded_arguments = values;
-						} else if (instruction.name == names.callv && values.size() == 1 &&
-								(values[0].get_type() == Variant::NIL ||
-										Variant::can_convert_strict(values[0].get_type(), Variant::ARRAY))) {
-							const Array packed_arguments = values[0];
-							forwarded_arguments.reserve(size_t(packed_arguments.size()));
-							for (int64_t index = 0; index < packed_arguments.size(); ++index) {
-								forwarded_arguments.push_back(packed_arguments[index]);
+						if (expected_method == names.call || expected_method == names.callv) {
+							std::vector<Variant> forwarded_arguments;
+							if (instruction.name == names.call && !values.empty()) {
+								forwarded_arguments = values;
+							} else if (instruction.name == names.callv && values.size() == 1 &&
+									(values[0].get_type() == Variant::NIL ||
+											Variant::can_convert_strict(values[0].get_type(), Variant::ARRAY))) {
+								const Array packed_arguments = values[0];
+								forwarded_arguments.reserve(size_t(packed_arguments.size()));
+								for (int64_t index = 0; index < packed_arguments.size(); ++index) {
+									forwarded_arguments.push_back(packed_arguments[index]);
+								}
 							}
+							forwarding_limit_exceeded = resolve_forwarded_dispatch(expected_method,
+									forwarded_arguments, expected_methods) == ForwardedDispatchResult::LIMIT_EXCEEDED;
 						}
 						expected_methods.push_back(expected_method);
-						forwarding_limit_exceeded = resolve_forwarded_dispatch(expected_method,
-								forwarded_arguments, expected_methods) == ForwardedDispatchResult::LIMIT_EXCEEDED;
 					} else {
 						// GDExtension cannot safely recover the ultimate target method from
 						// custom wrappers, including bound and unbound callables. Shield them
@@ -636,17 +659,18 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 					}
 				} else {
 					expected_methods.push_back(expected_method);
-					if (instruction.name == names.call || instruction.name == names.callv) {
+					if (local_callee == nullptr && !receiver_script_overrides_method &&
+							(instruction.name == names.call || instruction.name == names.callv)) {
 						forwarding_limit_exceeded = resolve_forwarded_dispatch(instruction.name,
 								values, expected_methods) == ForwardedDispatchResult::LIMIT_EXCEEDED;
 					}
 				}
-				if (forwarding_limit_exceeded) {
-					fail(r_failure, instruction.span, "Dynamic call/callv forwarding exceeded 128 layers.");
-					r_call_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
-					return {};
-				}
 				auto invoke_host_call = [&]() {
+					if (forwarding_limit_exceeded) {
+						fail(r_failure, instruction.span, "Dynamic call/callv forwarding exceeded 128 layers.");
+						nested_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
+						return;
+					}
 					if (capture_host_failure) {
 						NestedFailureCaptureScope capture(receiver_id, expected_methods);
 						receiver.callp(instruction.name, pointers.data(), int(pointers.size()), result, nested_error);
@@ -664,8 +688,8 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 						} else {
 							result = "MochaScript/bootstrap-1";
 						}
-					} else if (const CompiledFunction *callee = p_module.find_function(instruction.name)) {
-						result = execute(p_module, *callee, p_owner, r_members, pointers.data(), int(pointers.size()), nested_error, r_failure, instruction.span, false);
+					} else if (local_callee != nullptr) {
+						result = execute(p_module, *local_callee, p_owner, r_members, pointers.data(), int(pointers.size()), nested_error, r_failure, instruction.span, false);
 					} else {
 						invoke_host_call();
 					}

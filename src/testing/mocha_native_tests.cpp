@@ -694,6 +694,37 @@ godot::PackedStringArray MochaNativeTests::run() const {
 									failures.push_back("vm: Object.callv forwarding boundary did not enforce exactly 128 layers");
 								}
 							}
+							godot::Ref<MochaScript> local_callv_script;
+							local_callv_script.instantiate();
+							local_callv_script->set_diagnostic_path_for_validation("res://native_local_callv.mocha");
+							local_callv_script->_set_source_code(
+									"extends RefCounted\n"
+									"func callv(_method: Variant, _arguments: Variant) -> int:\n"
+									"\treturn 7\n"
+									"func invoke(arguments: Variant) -> int:\n"
+									"\treturn callv(\"callv\", arguments)\n");
+							godot::Ref<godot::RefCounted> local_callv_owner;
+							local_callv_owner.instantiate();
+							if (local_callv_script->_reload(false) != godot::OK || local_callv_script->get_compiled_module() == nullptr) {
+								failures.push_back("vm: same-module callv override fixture did not compile");
+							} else {
+								godot::Vector<godot::Variant> local_callv_members;
+								RuntimeFailure local_callv_initialization_failure;
+								const CompiledModule &local_callv_module = *local_callv_script->get_compiled_module();
+								if (MochaVM::initialize(local_callv_module, local_callv_owner.ptr(), local_callv_members,
+										local_callv_initialization_failure) != godot::OK) {
+									failures.push_back("vm: same-module callv override fixture did not initialize");
+								} else {
+									const godot::Variant local_deep_arguments = make_forwarded_arguments(128);
+									const godot::Variant *local_arguments[1] = { &local_deep_arguments };
+									result = MochaVM::call(local_callv_module, *local_callv_module.find_function("invoke"),
+											local_callv_owner.ptr(), local_callv_members, local_arguments, 1, call_error, failure);
+									if (call_error.error != GDEXTENSION_CALL_OK || !failure.message.is_empty() ||
+											result != godot::Variant(int64_t(7))) {
+										failures.push_back("vm: same-module callv was mistaken for host forwarding");
+									}
+								}
+							}
 							godot::PackedStringArray empty_packed_arguments;
 							for (const godot::Variant &converted_arguments : {
 									godot::Variant(), godot::Variant(empty_packed_arguments) }) {
