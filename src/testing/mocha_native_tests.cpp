@@ -385,7 +385,15 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			"func callable_object_call_failure(callback: Variant) -> Variant:\n"
 			"\treturn callback.call(\"dynamic_modulo\", \"%d\")\n"
 			"func callable_object_callv_failure(callback: Variant) -> Variant:\n"
-			"\treturn callback.callv([\"dynamic_modulo\", [\"%d\"]])\n";
+			"\treturn callback.callv([\"dynamic_modulo\", [\"%d\"]])\n"
+			"func chained_object_call_failure() -> Variant:\n"
+			"\treturn self.call(\"call\", \"dynamic_modulo\", \"%d\")\n"
+			"func chained_object_callv_failure() -> Variant:\n"
+			"\treturn self.call(\"callv\", \"dynamic_modulo\", [\"%d\"])\n"
+			"func chained_callv_to_call_failure() -> Variant:\n"
+			"\treturn self.callv(\"call\", [\"dynamic_modulo\", \"%d\"])\n"
+			"func callable_chained_callv_failure(callback: Variant) -> Variant:\n"
+			"\treturn callback.call(\"callv\", \"dynamic_modulo\", [\"%d\"])\n";
 	Program program;
 	MochaParser parser;
 	if (parser.parse(executable, "res://native_pipeline.mocha", program) != godot::OK) {
@@ -616,6 +624,25 @@ godot::PackedStringArray MochaNativeTests::run() const {
 									failure.path != "res://native_nested_runtime.mocha" || !failure_at(failure, 58, 9) ||
 									!called_at(failure, "res://native_pipeline.mocha", 146, 9)) {
 								failures.push_back("vm: Callable(Object.callv) lost its forwarded nested failure");
+							}
+							for (const auto &[method, line] : std::vector<std::pair<godot::StringName, int>>{
+									{ "chained_object_call_failure", 148 },
+									{ "chained_object_callv_failure", 150 },
+									{ "chained_callv_to_call_failure", 152 } }) {
+								MochaVM::call(*module, *module->find_function(method), nested_owner.ptr(), nested_members,
+										nullptr, 0, call_error, failure);
+								if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
+										failure.path != "res://native_nested_runtime.mocha" || !failure_at(failure, 58, 9) ||
+										!called_at(failure, "res://native_pipeline.mocha", line, 9)) {
+									failures.push_back("vm: chained Object.call/callv dispatch lost its nested failure: " + String(method));
+								}
+							}
+							MochaVM::call(*module, *module->find_function("callable_chained_callv_failure"), nested_owner.ptr(), nested_members,
+									object_call_arguments, 1, call_error, failure);
+							if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
+									failure.path != "res://native_nested_runtime.mocha" || !failure_at(failure, 58, 9) ||
+									!called_at(failure, "res://native_pipeline.mocha", 154, 9)) {
+								failures.push_back("vm: chained Callable(Object.callv) lost its nested failure");
 							}
 							godot::Ref<MochaScript> broken_initializer_script;
 							broken_initializer_script.instantiate();

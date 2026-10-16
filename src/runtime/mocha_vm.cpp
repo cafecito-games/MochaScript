@@ -108,6 +108,40 @@ const VMNames &vm_names() {
 	return names;
 }
 
+bool resolve_forwarded_dispatch(const StringName &p_method,
+		const std::vector<Variant> &p_arguments, StringName &r_method) {
+	const VMNames &names = vm_names();
+	StringName method = p_method;
+	std::vector<Variant> arguments = p_arguments;
+	for (int depth = 0; depth < 64; ++depth) {
+		if (method == names.call) {
+			if (arguments.empty() || (arguments[0].get_type() != Variant::STRING &&
+					arguments[0].get_type() != Variant::STRING_NAME)) {
+				return false;
+			}
+			method = StringName(arguments[0]);
+			arguments.erase(arguments.begin());
+		} else if (method == names.callv) {
+			if (arguments.size() < 2 || (arguments[0].get_type() != Variant::STRING &&
+					arguments[0].get_type() != Variant::STRING_NAME) ||
+					arguments[1].get_type() != Variant::ARRAY) {
+				return false;
+			}
+			method = StringName(arguments[0]);
+			const Array packed_arguments = arguments[1];
+			arguments.clear();
+			arguments.reserve(size_t(packed_arguments.size()));
+			for (int64_t index = 0; index < packed_arguments.size(); ++index) {
+				arguments.push_back(packed_arguments[index]);
+			}
+		} else {
+			r_method = method;
+			return !r_method.is_empty();
+		}
+	}
+	return false;
+}
+
 bool take_nested_failure(const RuntimeFailure &p_captured, const String &p_call_path,
 		const SourceSpan &p_call_span,
 		RuntimeFailure &r_failure) {
@@ -570,35 +604,26 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 						receiver_id = uint64_t(callable.get_object_id());
 						expected_method = callable.get_method();
 						capture_host_failure = !expected_method.is_empty();
-						Variant forwarded_first_argument;
-						bool has_forwarded_first_argument = false;
+						std::vector<Variant> forwarded_arguments;
 						if (instruction.name == names.call && !values.empty()) {
-							forwarded_first_argument = values[0];
-							has_forwarded_first_argument = true;
+							forwarded_arguments = values;
 						} else if (instruction.name == names.callv && values.size() == 1 &&
 								values[0].get_type() == Variant::ARRAY) {
-							const Array forwarded_arguments = values[0];
-							if (!forwarded_arguments.is_empty()) {
-								forwarded_first_argument = forwarded_arguments[0];
-								has_forwarded_first_argument = true;
+							const Array packed_arguments = values[0];
+							forwarded_arguments.reserve(size_t(packed_arguments.size()));
+							for (int64_t index = 0; index < packed_arguments.size(); ++index) {
+								forwarded_arguments.push_back(packed_arguments[index]);
 							}
 						}
-						if ((expected_method == names.call || expected_method == names.callv) &&
-								has_forwarded_first_argument &&
-								(forwarded_first_argument.get_type() == Variant::STRING ||
-										forwarded_first_argument.get_type() == Variant::STRING_NAME)) {
-							alternate_method = StringName(forwarded_first_argument);
-						}
+						resolve_forwarded_dispatch(expected_method, forwarded_arguments, alternate_method);
 					} else {
 						// GDExtension cannot safely recover the ultimate target method from
 						// custom wrappers, including bound and unbound callables. Shield them
 						// so a reentrant callback cannot claim this dispatch.
 						capture_host_failure = false;
 					}
-				} else if ((instruction.name == names.call || instruction.name == names.callv) &&
-						!values.empty() && (values[0].get_type() == Variant::STRING ||
-								values[0].get_type() == Variant::STRING_NAME)) {
-					alternate_method = StringName(values[0]);
+				} else if (instruction.name == names.call || instruction.name == names.callv) {
+					resolve_forwarded_dispatch(instruction.name, values, alternate_method);
 				}
 				auto invoke_host_call = [&]() {
 					if (capture_host_failure) {
