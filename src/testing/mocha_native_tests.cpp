@@ -393,7 +393,13 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			"func chained_callv_to_call_failure() -> Variant:\n"
 			"\treturn self.callv(\"call\", [\"dynamic_modulo\", \"%d\"])\n"
 			"func callable_chained_callv_failure(callback: Variant) -> Variant:\n"
-			"\treturn callback.call(\"callv\", \"dynamic_modulo\", [\"%d\"])\n";
+			"\treturn callback.call(\"callv\", \"dynamic_modulo\", [\"%d\"])\n"
+			"func callable_dynamic_callv(callback: Variant, arguments: Variant) -> Variant:\n"
+			"\treturn callback.callv(arguments)\n"
+			"func indirect_callv_arguments(arguments: Variant) -> Variant:\n"
+			"\treturn self.callv(\"callable_target_failure\", arguments)\n"
+			"func invoke_script_callv(target: Variant) -> Variant:\n"
+			"\treturn target.call(\"callv\", \"ignored\", [])\n";
 	Program program;
 	MochaParser parser;
 	if (parser.parse(executable, "res://native_pipeline.mocha", program) != godot::OK) {
@@ -643,6 +649,63 @@ godot::PackedStringArray MochaNativeTests::run() const {
 									failure.path != "res://native_nested_runtime.mocha" || !failure_at(failure, 58, 9) ||
 									!called_at(failure, "res://native_pipeline.mocha", 154, 9)) {
 								failures.push_back("vm: chained Callable(Object.callv) lost its nested failure");
+							}
+							godot::Array deepest_arguments;
+							deepest_arguments.push_back("dynamic_modulo");
+							godot::Array modulo_arguments;
+							modulo_arguments.push_back("%d");
+							deepest_arguments.push_back(modulo_arguments);
+							for (int depth = 0; depth < 129; ++depth) {
+								godot::Array wrapped_arguments;
+								wrapped_arguments.push_back("callv");
+								wrapped_arguments.push_back(deepest_arguments);
+								deepest_arguments = wrapped_arguments;
+							}
+							const godot::Variant deep_arguments = deepest_arguments;
+							const godot::Variant *deep_call_arguments[2] = { &object_callv_callable, &deep_arguments };
+							MochaVM::call(*module, *module->find_function("callable_dynamic_callv"), nested_owner.ptr(), nested_members,
+									deep_call_arguments, 2, call_error, failure);
+							if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
+									!failure.message.contains("exceeded 128 layers") ||
+									failure.path != "res://native_pipeline.mocha" || !failure_at(failure, 156, 9)) {
+								failures.push_back("vm: excessive call/callv forwarding did not fail at its Mocha call site");
+							}
+							godot::PackedStringArray empty_packed_arguments;
+							for (const godot::Variant &converted_arguments : {
+									godot::Variant(), godot::Variant(empty_packed_arguments) }) {
+								const godot::Variant *converted_call_arguments[1] = { &converted_arguments };
+								MochaVM::call(*module, *module->find_function("indirect_callv_arguments"), nested_owner.ptr(), nested_members,
+										converted_call_arguments, 1, call_error, failure);
+								if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
+										failure.path != "res://native_nested_runtime.mocha" || !failure_at(failure, 58, 9) ||
+										!called_at(failure, "res://native_pipeline.mocha", 158, 9)) {
+									failures.push_back("vm: strictly converted callv Array lost its nested failure");
+								}
+							}
+							godot::Ref<MochaScript> callv_override_script;
+							callv_override_script.instantiate();
+							callv_override_script->set_diagnostic_path_for_validation("res://native_callv_override.mocha");
+							callv_override_script->_set_source_code(
+									"extends RefCounted\n"
+									"func callv(_method: Variant, _arguments: Variant) -> Variant:\n"
+									"\tvar value: Variant = \"%d\"\n"
+									"\treturn value % 5\n");
+							godot::Ref<godot::RefCounted> callv_override_owner;
+							callv_override_owner.instantiate();
+							if (callv_override_script->_reload(false) != godot::OK) {
+								failures.push_back("vm: script-defined callv fixture did not compile");
+							} else {
+								callv_override_owner->set_script(callv_override_script);
+								const godot::Variant override_owner_value = callv_override_owner.ptr();
+								const godot::Variant *override_arguments[1] = { &override_owner_value };
+								MochaVM::call(*module, *module->find_function("invoke_script_callv"), nested_owner.ptr(), nested_members,
+										override_arguments, 1, call_error, failure);
+								if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
+										failure.path != "res://native_callv_override.mocha" || !failure_at(failure, 4, 9) ||
+										!called_at(failure, "res://native_pipeline.mocha", 160, 9)) {
+									failures.push_back("vm: script-defined intermediate callv lost its nested failure");
+								}
+								callv_override_owner->set_script(godot::Variant());
 							}
 							godot::Ref<MochaScript> broken_initializer_script;
 							broken_initializer_script.instantiate();

@@ -55,6 +55,9 @@ engine callbacks on the same receiver do not abort the direct call that triggere
 callables—including bound, unbound, and opaque custom wrappers—have no safely recoverable ultimate
 target-method identity through GDExtension, so they run behind a non-capturing shield: their callee
 reports any failure, but it is not attributed to the outer Mocha call.
+Dynamic `call`/`callv` forwarding accepts the same strict `Array` conversions as Godot, tracks every
+intermediate method for exact failure capture, and stops with source-located `M4001` if forwarding
+exceeds 128 layers.
 
 Untyped declarations infer and retain the initializer's static carrier type, so `var value = 1`
 cannot later store a `String` (`M2013`); an explicit `: Variant` is never narrowed. Statically known

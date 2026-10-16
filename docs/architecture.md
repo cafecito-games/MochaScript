@@ -62,6 +62,8 @@ ultimate target-method identity through GDExtension, so they run behind a non-ca
 Their internal failures are reported by the callee but cannot be misattributed to the outer Mocha
 call. Propagation preserves the originating module and instruction while recording the first outer
 Mocha call site, and never exports inner argument-error metadata to an unrelated host call.
+Dynamic `call`/`callv` forwarding is resolved through at most 128 layers; exceeding that safety
+limit stops before host dispatch with source-located `M4001` instead of losing an inner failure.
 
 The bootstrap has no tool scripts. In editor context a valid script therefore reports that it cannot
 instantiate, and Godot uses the placeholder-instance path; member initializers and user callbacks do

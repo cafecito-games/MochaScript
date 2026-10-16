@@ -79,17 +79,15 @@ Variant::Type variant_type_for(const TypeRef &p_type) {
 struct NestedFailureCapture {
 	RuntimeFailure *failure = nullptr;
 	uint64_t owner_id = 0;
-	const StringName *expected_method = nullptr;
-	const StringName *alternate_method = nullptr;
+	const std::vector<StringName> *expected_methods = nullptr;
 };
 
 thread_local std::vector<NestedFailureCapture> vm_failure_captures;
 
 struct NestedFailureCaptureScope {
 	RuntimeFailure captured_failure;
-	NestedFailureCaptureScope(uint64_t p_owner_id, const StringName &p_expected_method,
-			const StringName &p_alternate_method) {
-		vm_failure_captures.push_back({ &captured_failure, p_owner_id, &p_expected_method, &p_alternate_method });
+	NestedFailureCaptureScope(uint64_t p_owner_id, const std::vector<StringName> &p_expected_methods) {
+		vm_failure_captures.push_back({ &captured_failure, p_owner_id, &p_expected_methods });
 	}
 	~NestedFailureCaptureScope() { vm_failure_captures.pop_back(); }
 	RuntimeFailure failure() const { return captured_failure; }
@@ -108,24 +106,31 @@ const VMNames &vm_names() {
 	return names;
 }
 
-bool resolve_forwarded_dispatch(const StringName &p_method,
-		const std::vector<Variant> &p_arguments, StringName &r_method) {
+enum class ForwardedDispatchResult {
+	RESOLVED,
+	INVALID,
+	LIMIT_EXCEEDED,
+};
+
+ForwardedDispatchResult resolve_forwarded_dispatch(const StringName &p_method,
+		const std::vector<Variant> &p_arguments, std::vector<StringName> &r_methods) {
 	const VMNames &names = vm_names();
 	StringName method = p_method;
 	std::vector<Variant> arguments = p_arguments;
-	for (int depth = 0; depth < 64; ++depth) {
+	for (int depth = 0; depth < 128; ++depth) {
 		if (method == names.call) {
 			if (arguments.empty() || (arguments[0].get_type() != Variant::STRING &&
 					arguments[0].get_type() != Variant::STRING_NAME)) {
-				return false;
+				return ForwardedDispatchResult::INVALID;
 			}
 			method = StringName(arguments[0]);
 			arguments.erase(arguments.begin());
 		} else if (method == names.callv) {
 			if (arguments.size() < 2 || (arguments[0].get_type() != Variant::STRING &&
 					arguments[0].get_type() != Variant::STRING_NAME) ||
-					arguments[1].get_type() != Variant::ARRAY) {
-				return false;
+					(arguments[1].get_type() != Variant::NIL &&
+							!Variant::can_convert_strict(arguments[1].get_type(), Variant::ARRAY))) {
+				return ForwardedDispatchResult::INVALID;
 			}
 			method = StringName(arguments[0]);
 			const Array packed_arguments = arguments[1];
@@ -135,11 +140,14 @@ bool resolve_forwarded_dispatch(const StringName &p_method,
 				arguments.push_back(packed_arguments[index]);
 			}
 		} else {
-			r_method = method;
-			return !r_method.is_empty();
+			return ForwardedDispatchResult::RESOLVED;
 		}
+		if (method.is_empty()) return ForwardedDispatchResult::INVALID;
+		r_methods.push_back(method);
 	}
-	return false;
+	return method == names.call || method == names.callv
+			? ForwardedDispatchResult::LIMIT_EXCEEDED
+			: ForwardedDispatchResult::RESOLVED;
 }
 
 bool take_nested_failure(const RuntimeFailure &p_captured, const String &p_call_path,
@@ -227,7 +235,7 @@ bool evaluate_integer_binary(MochaTokenizer::Token::Type p_operation, int64_t p_
 } // namespace
 
 MochaNestedFailureShield::MochaNestedFailureShield() {
-	vm_failure_captures.push_back({ nullptr, 0, nullptr, nullptr });
+	vm_failure_captures.push_back({ nullptr, 0, nullptr });
 }
 MochaNestedFailureShield::~MochaNestedFailureShield() {
 	vm_failure_captures.pop_back();
@@ -594,8 +602,9 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				RuntimeFailure nested_failure;
 				uint64_t receiver_id = receiver.get_type() == Variant::OBJECT ? uint64_t(ObjectID(receiver)) : 0;
 				StringName expected_method = instruction.name;
-				StringName alternate_method;
+				std::vector<StringName> expected_methods;
 				bool capture_host_failure = true;
+				bool forwarding_limit_exceeded = false;
 				const VMNames &names = vm_names();
 				if (receiver.get_type() == Variant::CALLABLE &&
 						(instruction.name == names.call || instruction.name == names.callv)) {
@@ -608,26 +617,38 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 						if (instruction.name == names.call && !values.empty()) {
 							forwarded_arguments = values;
 						} else if (instruction.name == names.callv && values.size() == 1 &&
-								values[0].get_type() == Variant::ARRAY) {
+								(values[0].get_type() == Variant::NIL ||
+										Variant::can_convert_strict(values[0].get_type(), Variant::ARRAY))) {
 							const Array packed_arguments = values[0];
 							forwarded_arguments.reserve(size_t(packed_arguments.size()));
 							for (int64_t index = 0; index < packed_arguments.size(); ++index) {
 								forwarded_arguments.push_back(packed_arguments[index]);
 							}
 						}
-						resolve_forwarded_dispatch(expected_method, forwarded_arguments, alternate_method);
+						expected_methods.push_back(expected_method);
+						forwarding_limit_exceeded = resolve_forwarded_dispatch(expected_method,
+								forwarded_arguments, expected_methods) == ForwardedDispatchResult::LIMIT_EXCEEDED;
 					} else {
 						// GDExtension cannot safely recover the ultimate target method from
 						// custom wrappers, including bound and unbound callables. Shield them
 						// so a reentrant callback cannot claim this dispatch.
 						capture_host_failure = false;
 					}
-				} else if (instruction.name == names.call || instruction.name == names.callv) {
-					resolve_forwarded_dispatch(instruction.name, values, alternate_method);
+				} else {
+					expected_methods.push_back(expected_method);
+					if (instruction.name == names.call || instruction.name == names.callv) {
+						forwarding_limit_exceeded = resolve_forwarded_dispatch(instruction.name,
+								values, expected_methods) == ForwardedDispatchResult::LIMIT_EXCEEDED;
+					}
+				}
+				if (forwarding_limit_exceeded) {
+					fail(r_failure, instruction.span, "Dynamic call/callv forwarding exceeded 128 layers.");
+					r_call_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
+					return {};
 				}
 				auto invoke_host_call = [&]() {
 					if (capture_host_failure) {
-						NestedFailureCaptureScope capture(receiver_id, expected_method, alternate_method);
+						NestedFailureCaptureScope capture(receiver_id, expected_methods);
 						receiver.callp(instruction.name, pointers.data(), int(pointers.size()), result, nested_error);
 						nested_failure = capture.failure();
 					} else {
@@ -742,15 +763,14 @@ bool MochaVM::publish_nested_failure(const RuntimeFailure &p_failure, uint64_t p
 		const StringName &p_method) {
 	if (p_failure.message.is_empty() || vm_failure_captures.empty()) return false;
 	NestedFailureCapture &capture = vm_failure_captures.back();
-	if (capture.failure == nullptr || capture.expected_method == nullptr) return false;
-	const StringName &expected_method = *capture.expected_method;
-	const StringName &alternate_method = *capture.alternate_method;
+	if (capture.failure == nullptr || capture.expected_methods == nullptr) return false;
 	bool method_matches = false;
-	if (p_method.is_empty()) {
-		method_matches = expected_method == vm_names().set_script || alternate_method == vm_names().set_script;
-	} else {
-		method_matches = expected_method == p_method ||
-				(!alternate_method.is_empty() && alternate_method == p_method);
+	for (const StringName &expected_method : *capture.expected_methods) {
+		if ((p_method.is_empty() && expected_method == vm_names().set_script) ||
+				(!p_method.is_empty() && expected_method == p_method)) {
+			method_matches = true;
+			break;
+		}
 	}
 	if (capture.owner_id != p_owner_id || !capture.failure->message.is_empty() || !method_matches) return false;
 	*capture.failure = p_failure;
@@ -762,7 +782,9 @@ bool MochaVM::publish_nested_failure(const RuntimeFailure &p_failure, uint64_t p
 bool MochaVM::test_failure_capture_match(uint64_t p_capture_owner, const StringName &p_expected_method,
 		const StringName &p_alternate_method, uint64_t p_publication_owner,
 		const StringName &p_publication_method) {
-	NestedFailureCaptureScope capture(p_capture_owner, p_expected_method, p_alternate_method);
+	std::vector<StringName> expected_methods = { p_expected_method };
+	if (!p_alternate_method.is_empty()) expected_methods.push_back(p_alternate_method);
+	NestedFailureCaptureScope capture(p_capture_owner, expected_methods);
 	RuntimeFailure failure;
 	failure.code = "M4001";
 	failure.message = "capture test";
