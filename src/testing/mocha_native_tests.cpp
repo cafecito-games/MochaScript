@@ -399,7 +399,9 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			"func indirect_callv_arguments(arguments: Variant) -> Variant:\n"
 			"\treturn self.callv(\"callable_target_failure\", arguments)\n"
 			"func invoke_script_callv(target: Variant) -> Variant:\n"
-			"\treturn target.call(\"callv\", \"ignored\", [])\n";
+			"\treturn target.call(\"callv\", \"ignored\", [])\n"
+			"func dynamic_self_callv(arguments: Variant) -> Variant:\n"
+			"\treturn self.callv(arguments[0], arguments[1])\n";
 	Program program;
 	MochaParser parser;
 	if (parser.parse(executable, "res://native_pipeline.mocha", program) != godot::OK) {
@@ -650,25 +652,47 @@ godot::PackedStringArray MochaNativeTests::run() const {
 									!called_at(failure, "res://native_pipeline.mocha", 154, 9)) {
 								failures.push_back("vm: chained Callable(Object.callv) lost its nested failure");
 							}
-							godot::Array deepest_arguments;
-							deepest_arguments.push_back("dynamic_modulo");
-							godot::Array modulo_arguments;
-							modulo_arguments.push_back("%d");
-							deepest_arguments.push_back(modulo_arguments);
-							for (int depth = 0; depth < 129; ++depth) {
-								godot::Array wrapped_arguments;
-								wrapped_arguments.push_back("callv");
-								wrapped_arguments.push_back(deepest_arguments);
-								deepest_arguments = wrapped_arguments;
-							}
-							const godot::Variant deep_arguments = deepest_arguments;
-							const godot::Variant *deep_call_arguments[2] = { &object_callv_callable, &deep_arguments };
-							MochaVM::call(*module, *module->find_function("callable_dynamic_callv"), nested_owner.ptr(), nested_members,
-									deep_call_arguments, 2, call_error, failure);
-							if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
-									!failure.message.contains("exceeded 128 layers") ||
-									failure.path != "res://native_pipeline.mocha" || !failure_at(failure, 156, 9)) {
-								failures.push_back("vm: excessive call/callv forwarding did not fail at its Mocha call site");
+							auto make_forwarded_arguments = [](int p_wrap_count) {
+								godot::Array arguments;
+								arguments.push_back("dynamic_modulo");
+								godot::Array modulo_arguments;
+								modulo_arguments.push_back("%d");
+								arguments.push_back(modulo_arguments);
+								for (int depth = 0; depth < p_wrap_count; ++depth) {
+									godot::Array wrapped_arguments;
+									wrapped_arguments.push_back("callv");
+									wrapped_arguments.push_back(arguments);
+									arguments = wrapped_arguments;
+								}
+								return arguments;
+							};
+							for (const int wrap_count : { 127, 128 }) {
+								const bool exceeds_limit = wrap_count == 128;
+								const godot::Variant forwarding_arguments = make_forwarded_arguments(wrap_count);
+								const godot::Variant *callable_limit_arguments[2] = {
+									&object_callv_callable, &forwarding_arguments
+								};
+								MochaVM::call(*module, *module->find_function("callable_dynamic_callv"), nested_owner.ptr(), nested_members,
+										callable_limit_arguments, 2, call_error, failure);
+								if ((!exceeds_limit && (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
+										failure.path != "res://native_nested_runtime.mocha" || !failure_at(failure, 58, 9) ||
+										!called_at(failure, "res://native_pipeline.mocha", 156, 9))) ||
+										(exceeds_limit && (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
+												!failure.message.contains("exceeded 128 layers") ||
+												failure.path != "res://native_pipeline.mocha" || !failure_at(failure, 156, 9)))) {
+									failures.push_back("vm: Callable.callv forwarding boundary did not enforce exactly 128 layers");
+								}
+								const godot::Variant *object_limit_arguments[1] = { &forwarding_arguments };
+								MochaVM::call(*module, *module->find_function("dynamic_self_callv"), nested_owner.ptr(), nested_members,
+										object_limit_arguments, 1, call_error, failure);
+								if ((!exceeds_limit && (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
+										failure.path != "res://native_nested_runtime.mocha" || !failure_at(failure, 58, 9) ||
+										!called_at(failure, "res://native_pipeline.mocha", 162, 9))) ||
+										(exceeds_limit && (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
+												!failure.message.contains("exceeded 128 layers") ||
+												failure.path != "res://native_pipeline.mocha" || !failure_at(failure, 162, 9)))) {
+									failures.push_back("vm: Object.callv forwarding boundary did not enforce exactly 128 layers");
+								}
 							}
 							godot::PackedStringArray empty_packed_arguments;
 							for (const godot::Variant &converted_arguments : {
