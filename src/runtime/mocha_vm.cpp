@@ -114,36 +114,57 @@ enum class ForwardedDispatchResult {
 };
 
 ForwardedDispatchResult resolve_forwarded_dispatch(const StringName &p_method,
-		const std::vector<Variant> &p_arguments, std::vector<StringName> &r_methods) {
+		const std::vector<Variant> &p_arguments, const Array &p_array_arguments,
+		bool p_use_array_arguments, Script *p_receiver_script,
+		std::vector<StringName> &r_methods) {
 	const VMNames &names = vm_names();
 	StringName method = p_method;
-	std::vector<Variant> arguments = p_arguments;
 	size_t argument_offset = 0;
+	Array array_arguments = p_array_arguments;
+	size_t array_argument_offset = 0;
+	bool using_array_arguments = p_use_array_arguments;
+	auto argument_count = [&]() -> size_t {
+		return using_array_arguments ? size_t(array_arguments.size()) - array_argument_offset : p_arguments.size() - argument_offset;
+	};
+	auto argument_at = [&](size_t p_index) -> Variant {
+		return using_array_arguments ? array_arguments[int64_t(array_argument_offset + p_index)] : p_arguments[argument_offset + p_index];
+	};
 	for (int depth = 0; depth < 128; ++depth) {
+		if (p_receiver_script != nullptr && p_receiver_script->has_script_method(method)) {
+			return ForwardedDispatchResult::RESOLVED;
+		}
 		if (method == names.call) {
-			if (argument_offset >= arguments.size() ||
-					(arguments[argument_offset].get_type() != Variant::STRING &&
-							arguments[argument_offset].get_type() != Variant::STRING_NAME)) {
+			if (argument_count() < 1) {
 				return ForwardedDispatchResult::INVALID;
 			}
-			method = StringName(arguments[argument_offset++]);
+			const Variant method_argument = argument_at(0);
+			if (method_argument.get_type() != Variant::STRING &&
+					method_argument.get_type() != Variant::STRING_NAME) {
+				return ForwardedDispatchResult::INVALID;
+			}
+			method = StringName(method_argument);
+			if (using_array_arguments) {
+				array_argument_offset++;
+			} else {
+				argument_offset++;
+			}
 		} else if (method == names.callv) {
-			if (arguments.size() - argument_offset < 2 ||
-					(arguments[argument_offset].get_type() != Variant::STRING &&
-							arguments[argument_offset].get_type() != Variant::STRING_NAME) ||
-					(arguments[argument_offset + 1].get_type() != Variant::NIL &&
-							!Variant::can_convert_strict(arguments[argument_offset + 1].get_type(), Variant::ARRAY))) {
+			if (argument_count() != 2) {
 				return ForwardedDispatchResult::INVALID;
 			}
-			method = StringName(arguments[argument_offset]);
+			const Variant method_argument = argument_at(0);
+			const Variant array_argument = argument_at(1);
+			if ((method_argument.get_type() != Variant::STRING &&
+					method_argument.get_type() != Variant::STRING_NAME) ||
+					(array_argument.get_type() != Variant::NIL &&
+							!Variant::can_convert_strict(array_argument.get_type(), Variant::ARRAY))) {
+				return ForwardedDispatchResult::INVALID;
+			}
+			method = StringName(method_argument);
 			if (method == names.call || method == names.callv) {
-				const Array packed_arguments = arguments[argument_offset + 1];
-				arguments.clear();
-				arguments.reserve(size_t(packed_arguments.size()));
-				for (int64_t index = 0; index < packed_arguments.size(); ++index) {
-					arguments.push_back(packed_arguments[index]);
-				}
-				argument_offset = 0;
+				array_arguments = array_argument;
+				array_argument_offset = 0;
+				using_array_arguments = true;
 			}
 		} else {
 			return ForwardedDispatchResult::RESOLVED;
@@ -154,6 +175,14 @@ ForwardedDispatchResult resolve_forwarded_dispatch(const StringName &p_method,
 	return method == names.call || method == names.callv
 			? ForwardedDispatchResult::LIMIT_EXCEEDED
 			: ForwardedDispatchResult::RESOLVED;
+}
+
+Script *get_attached_script(Object *p_object) {
+	if (p_object == nullptr) return nullptr;
+	const Variant attached_script = p_object->get_script();
+	return attached_script.get_type() == Variant::OBJECT
+			? Object::cast_to<Script>(attached_script.get_validated_object())
+			: nullptr;
 }
 
 bool take_nested_failure(const RuntimeFailure &p_captured, const String &p_call_path,
@@ -607,6 +636,9 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				nested_error.error = GDEXTENSION_CALL_OK;
 				RuntimeFailure nested_failure;
 				uint64_t receiver_id = receiver.get_type() == Variant::OBJECT ? uint64_t(ObjectID(receiver)) : 0;
+				Object *validated_receiver_object = receiver.get_type() == Variant::OBJECT
+						? receiver.get_validated_object()
+						: nullptr;
 				StringName expected_method = instruction.name;
 				std::vector<StringName> expected_methods;
 				bool capture_host_failure = true;
@@ -615,42 +647,35 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 				const CompiledFunction *local_callee = instruction.opcode == OpCode::CALL_SELF
 						? p_module.find_function(instruction.name)
 						: nullptr;
-				bool receiver_script_overrides_method = false;
-				if (local_callee == nullptr && receiver.get_type() == Variant::OBJECT &&
-						(instruction.name == names.call || instruction.name == names.callv)) {
-					Object *receiver_object = receiver;
-					if (receiver_object != nullptr) {
-						const Variant attached_script = receiver_object->get_script();
-						Script *script = attached_script.get_type() == Variant::OBJECT
-								? Object::cast_to<Script>(attached_script.get_validated_object())
-								: nullptr;
-						receiver_script_overrides_method = script != nullptr && script->has_script_method(instruction.name);
-					}
-				}
+				Script *receiver_script = get_attached_script(validated_receiver_object);
 				if (receiver.get_type() == Variant::CALLABLE &&
 						(instruction.name == names.call || instruction.name == names.callv)) {
 					const Callable callable = receiver;
 					if (callable.is_standard()) {
 						receiver_id = uint64_t(callable.get_object_id());
+						validated_receiver_object = ObjectDB::get_instance(ObjectID(receiver_id));
+						receiver_script = get_attached_script(validated_receiver_object);
 						expected_method = callable.get_method();
 						capture_host_failure = !expected_method.is_empty();
-						if (expected_method == names.call || expected_method == names.callv) {
-							std::vector<Variant> forwarded_arguments;
-							if (instruction.name == names.call && !values.empty()) {
-								forwarded_arguments = values;
-							} else if (instruction.name == names.callv && values.size() == 1 &&
+						expected_methods.push_back(expected_method);
+						if (validated_receiver_object != nullptr &&
+								(expected_method == names.call || expected_method == names.callv)) {
+							Array callable_array_arguments;
+							bool use_callable_array_arguments = false;
+							bool arguments_available = instruction.name == names.call;
+							if (instruction.name == names.callv && values.size() == 1 &&
 									(values[0].get_type() == Variant::NIL ||
 											Variant::can_convert_strict(values[0].get_type(), Variant::ARRAY))) {
-								const Array packed_arguments = values[0];
-								forwarded_arguments.reserve(size_t(packed_arguments.size()));
-								for (int64_t index = 0; index < packed_arguments.size(); ++index) {
-									forwarded_arguments.push_back(packed_arguments[index]);
-								}
+								callable_array_arguments = values[0];
+								use_callable_array_arguments = true;
+								arguments_available = true;
 							}
-							forwarding_limit_exceeded = resolve_forwarded_dispatch(expected_method,
-									forwarded_arguments, expected_methods) == ForwardedDispatchResult::LIMIT_EXCEEDED;
+							if (arguments_available) {
+								forwarding_limit_exceeded = resolve_forwarded_dispatch(expected_method,
+										values, callable_array_arguments, use_callable_array_arguments,
+										receiver_script, expected_methods) == ForwardedDispatchResult::LIMIT_EXCEEDED;
+							}
 						}
-						expected_methods.push_back(expected_method);
 					} else {
 						// GDExtension cannot safely recover the ultimate target method from
 						// custom wrappers, including bound and unbound callables. Shield them
@@ -659,13 +684,20 @@ Variant MochaVM::execute(const CompiledModule &p_module, const CompiledFunction 
 					}
 				} else {
 					expected_methods.push_back(expected_method);
-					if (local_callee == nullptr && !receiver_script_overrides_method &&
+					if (local_callee == nullptr && validated_receiver_object != nullptr &&
 							(instruction.name == names.call || instruction.name == names.callv)) {
+						const Array no_array_arguments;
 						forwarding_limit_exceeded = resolve_forwarded_dispatch(instruction.name,
-								values, expected_methods) == ForwardedDispatchResult::LIMIT_EXCEEDED;
+								values, no_array_arguments, false, receiver_script,
+								expected_methods) == ForwardedDispatchResult::LIMIT_EXCEEDED;
 					}
 				}
 				auto invoke_host_call = [&]() {
+					if (receiver.get_type() == Variant::OBJECT && validated_receiver_object == nullptr) {
+						fail(r_failure, instruction.span, "The host-call receiver was freed before dispatch.");
+						nested_error.error = GDEXTENSION_CALL_ERROR_INSTANCE_IS_NULL;
+						return;
+					}
 					if (forwarding_limit_exceeded) {
 						fail(r_failure, instruction.span, "Dynamic call/callv forwarding exceeded 128 layers.");
 						nested_error.error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;

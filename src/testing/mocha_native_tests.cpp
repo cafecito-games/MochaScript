@@ -401,7 +401,13 @@ godot::PackedStringArray MochaNativeTests::run() const {
 			"func invoke_script_callv(target: Variant) -> Variant:\n"
 			"\treturn target.call(\"callv\", \"ignored\", [])\n"
 			"func dynamic_self_callv(arguments: Variant) -> Variant:\n"
-			"\treturn self.callv(arguments[0], arguments[1])\n";
+			"\treturn self.callv(arguments[0], arguments[1])\n"
+			"func callable_override_call(callback: Variant, arguments: Variant) -> Variant:\n"
+			"\treturn callback.call(\"callv\", \"callv\", arguments)\n"
+			"func call_freed(target: Variant) -> Variant:\n"
+			"\treturn target.call(\"get_class\")\n"
+			"func callv_freed(target: Variant) -> Variant:\n"
+			"\treturn target.callv(\"get_class\", [])\n";
 	Program program;
 	MochaParser parser;
 	if (parser.parse(executable, "res://native_pipeline.mocha", program) != godot::OK) {
@@ -760,7 +766,43 @@ godot::PackedStringArray MochaNativeTests::run() const {
 										!called_at(failure, "res://native_pipeline.mocha", 160, 9)) {
 									failures.push_back("vm: script-defined intermediate callv lost its nested failure");
 								}
+								const godot::Variant override_callv_callable = godot::Callable(callv_override_owner.ptr(), "callv");
+								const godot::Variant override_deep_arguments = make_forwarded_arguments(128);
+								const godot::Variant *override_callable_arguments[2] = {
+									&override_callv_callable, &override_deep_arguments
+								};
+								MochaVM::call(*module, *module->find_function("callable_dynamic_callv"), nested_owner.ptr(), nested_members,
+										override_callable_arguments, 2, call_error, failure);
+								if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
+										failure.path != "res://native_callv_override.mocha" || !failure_at(failure, 4, 9) ||
+										!called_at(failure, "res://native_pipeline.mocha", 156, 9)) {
+									failures.push_back("vm: Callable target script override was mistaken for native forwarding");
+								}
+								const godot::Variant override_call_callable = godot::Callable(callv_override_owner.ptr(), "call");
+								const godot::Variant *intermediate_override_arguments[2] = {
+									&override_call_callable, &override_deep_arguments
+								};
+								MochaVM::call(*module, *module->find_function("callable_override_call"), nested_owner.ptr(), nested_members,
+										intermediate_override_arguments, 2, call_error, failure);
+								if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
+										failure.path != "res://native_callv_override.mocha" || !failure_at(failure, 4, 9) ||
+										!called_at(failure, "res://native_pipeline.mocha", 164, 9)) {
+									failures.push_back("vm: intermediate Callable target override was mistaken for native forwarding");
+								}
 								callv_override_owner->set_script(godot::Variant());
+							}
+							godot::Node *freed_receiver = memnew(godot::Node);
+							const godot::Variant freed_receiver_value = freed_receiver;
+							memdelete(freed_receiver);
+							const godot::Variant *freed_arguments[1] = { &freed_receiver_value };
+							for (const auto &[method, line] : std::vector<std::pair<godot::StringName, int>>{
+									{ "call_freed", 166 }, { "callv_freed", 168 } }) {
+								MochaVM::call(*module, *module->find_function(method), nested_owner.ptr(), nested_members,
+										freed_arguments, 1, call_error, failure);
+								if (call_error.error != GDEXTENSION_CALL_OK || failure.code != "M4001" ||
+										failure.path != "res://native_pipeline.mocha" || !failure_at(failure, line, 9)) {
+									failures.push_back("vm: freed Object receiver was not rejected safely: " + String(method));
+								}
 							}
 							godot::Ref<MochaScript> broken_initializer_script;
 							broken_initializer_script.instantiate();
