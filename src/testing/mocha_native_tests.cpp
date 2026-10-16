@@ -838,8 +838,8 @@ godot::PackedStringArray MochaNativeTests::run() const {
 							owner_freed_script->set_diagnostic_path_for_validation("res://native_owner_freed.mocha");
 							owner_freed_script->_set_source_code(
 									"extends Node\n"
-					"func destroy_during_call(killer: Variant, script: Variant) -> void:\n"
-					"\tkiller.delete_node_for_test(self, script)\n");
+									"func destroy_during_call(killer: Variant, script: Variant) -> void:\n"
+									"\tkiller.delete_node_for_test(self, script)\n");
 							godot::Node *doomed_owner = memnew(godot::Node);
 							if (owner_freed_script->_reload(false) != godot::OK) {
 								failures.push_back("instance: owner-free fixture did not compile");
@@ -849,13 +849,13 @@ godot::PackedStringArray MochaNativeTests::run() const {
 								const godot::ObjectID doomed_owner_id(doomed_owner->get_instance_id());
 								const godot::Variant doomed_owner_value = doomed_owner;
 								const godot::Variant killer_value = const_cast<MochaNativeTests *>(this);
-				const godot::Variant owner_freed_script_value = owner_freed_script;
-				const godot::Variant *destroy_arguments[3] = {
-					&doomed_owner_value, &killer_value, &owner_freed_script_value
-				};
-				deferred_instance_observed = false;
+								const godot::Variant owner_freed_script_value = owner_freed_script;
+								const godot::Variant *destroy_arguments[3] = {
+									&doomed_owner_value, &killer_value, &owner_freed_script_value
+								};
+								deferred_instance_observed = false;
 								MochaVM::call(*module, *module->find_function("destroy_attached_owner"), nested_owner.ptr(), nested_members,
-						destroy_arguments, 3, call_error, failure);
+										destroy_arguments, 3, call_error, failure);
 								godot::Object *survivor = godot::ObjectDB::get_instance(doomed_owner_id);
 								if (survivor != nullptr) {
 									failures.push_back("instance: host callback did not destroy the active MochaScript owner");
@@ -867,9 +867,9 @@ godot::PackedStringArray MochaNativeTests::run() const {
 										!called_at(failure, "res://native_pipeline.mocha", 172, 9)) {
 									failures.push_back("instance: owner-free failure was not propagated with source locations");
 								}
-				if (!deferred_instance_observed) {
-					failures.push_back("instance: active owner-free did not defer ScriptInstance deletion until unwind");
-				}
+								if (!deferred_instance_observed) {
+									failures.push_back("instance: active owner-free did not defer ScriptInstance deletion until unwind");
+								}
 								if (owner_freed_script->_reload(false) != godot::OK) {
 									failures.push_back("instance: deferred owner-free did not release the script instance after unwind");
 								}
